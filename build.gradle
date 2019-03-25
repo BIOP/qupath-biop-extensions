@@ -1,0 +1,37 @@
+plugins {
+    id 'java'
+}
+
+group 'ch.epfl.biop.qupath'
+version '2.0-SNAPSHOT'
+description = 'qupath-biop-extension'
+
+
+def jfxVersion = '11.0.2'
+def platform = 'win'
+sourceCompatibility = 11
+
+task copyJarToQuPath (type: Copy) {
+    from jar
+    into "C:\\Users\\oburri\\QuPath\\extensions"
+}
+
+
+build.dependsOn copyJarToQuPath
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+dependencies {
+    implementation group: 'qupath', name: 'qupath-gui-fx'
+    implementation group: 'qupath', name: 'qupath-extension-processing'
+    implementation group: 'ch.qos.logback', name: 'logback-classic', version:'1.2.3'
+    for (fx in ['javafx-base', 'javafx-controls', 'javafx-graphics', 'javafx-media', 'javafx-web', 'javafx-swing']) {
+        implementation "org.openjfx:${fx}:${jfxVersion}"
+        implementation "org.openjfx:${fx}:${jfxVersion}:${platform}"
+    }
+    implementation group: 'org.controlsfx', name: 'controlsfx', version: '11.0.0-RC2'
+    implementation 'net.imagej:ij:1.52k'
+}
