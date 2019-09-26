@@ -142,8 +142,11 @@ public class Utils extends QP {
         ObservableMeasurementTableData ob = new ObservableMeasurementTableData();
         // This line creates all the measurements
         ob.setImageData(getCurrentImageData(), pathObjects);
-
         return ob;
+    }
+
+    public static double getPixelSize() {
+        return getCurrentImageData( ).getServer( ).getAveragedPixelSizeMicrons( );
     }
 
     /**

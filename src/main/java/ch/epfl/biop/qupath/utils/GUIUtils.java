@@ -100,14 +100,13 @@ public class GUIUtils extends QPEx {
      *  }
      * </pre>
      */
-    // TODO Return doublers
-    public static List<Integer> getChannelMinMax(int channel) {
+    public static List<Double> getChannelMinMax(int channel) {
         ChannelDisplayInfo selectedChannel = getSelectedChannelInfo(channel);
 
-        Integer min = Math.round(selectedChannel.getMinDisplay());
-        Integer max = Math.round(selectedChannel.getMaxDisplay());
+        Double min = Double.valueOf( selectedChannel.getMinDisplay() );
+        Double max = Double.valueOf( selectedChannel.getMaxDisplay() );
 
-        ArrayList<Integer> minmax = new ArrayList<>();
+        ArrayList<Double> minmax = new ArrayList<>();
         minmax.add(min);
         minmax.add(max);
 
@@ -175,7 +174,7 @@ public class GUIUtils extends QPEx {
      * @param min         minimum channel display value
      * @param max         maximum channel display value
      */
-    public static void setChannelMinMax(String channelName, int min, int max) {
+    public static void setChannelMinMax(String channelName, double min, double max) {
         QuPathViewer viewer = getCurrentViewer();
         ImageDisplay display = getCurrentImageDisplay();
 
@@ -193,9 +192,6 @@ public class GUIUtils extends QPEx {
         }
 
     }
-
-
-
 
     /**
      * Sets the minimum and maximum display range for a channel, defined by its index (1 based)

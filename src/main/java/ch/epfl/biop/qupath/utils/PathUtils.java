@@ -7,10 +7,7 @@ import qupath.lib.geom.Point2;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathDetectionObject;
 import qupath.lib.objects.PathObject;
-import qupath.lib.roi.AreaROI;
-import qupath.lib.roi.LineROI;
-import qupath.lib.roi.PathROIToolsAwt;
-import qupath.lib.roi.PolygonROI;
+import qupath.lib.roi.*;
 import qupath.lib.roi.interfaces.PathArea;
 import qupath.lib.roi.interfaces.PathShape;
 import qupath.lib.roi.interfaces.ROI;
@@ -33,7 +30,7 @@ public class PathUtils extends QP {
      * @return
      */
     public static double getAreaMicrons(PathObject object) {
-        double pixel_size = getCurrentImageData( ).getServer( ).getAveragedPixelSizeMicrons( );
+        double pixel_size = Utils.getPixelSize();
         Double area = getArea( object );
         return area * pixel_size * pixel_size;
     }
@@ -45,10 +42,10 @@ public class PathUtils extends QP {
      */
     public static double getArea(PathObject object) {
         ROI roi = object.getROI();
-        if (roi instanceof AreaROI) {
-            return ( (AreaROI) roi ).getArea( );
+        if (roi instanceof AbstractPathAreaROI ) {
+            return ( (AbstractPathAreaROI) roi ).getArea( );
         }
-        logger.warn( "Area for PathObject {} is undefined because it is of class {}", object.getDisplayedName(), object.getClass().toString() );
+        logger.warn( "Area for PathObject {} is undefined because it is of class {}", object.getDisplayedName(), object.getROI().getClass().toString() );
         return 0;
     }
 
