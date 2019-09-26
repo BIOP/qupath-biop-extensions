@@ -1,5 +1,8 @@
 package ch.epfl.biop.qupath.utils;
 
+import ch.epfl.biop.qupath.plugins.SimpleThresholdDetection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import qupath.lib.geom.Point2;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathDetectionObject;
@@ -8,36 +11,69 @@ import qupath.lib.roi.AreaROI;
 import qupath.lib.roi.LineROI;
 import qupath.lib.roi.PathROIToolsAwt;
 import qupath.lib.roi.PolygonROI;
+import qupath.lib.roi.interfaces.PathArea;
 import qupath.lib.roi.interfaces.PathShape;
 import qupath.lib.roi.interfaces.ROI;
 import qupath.lib.scripting.QP;
 
-import java.awt.*;
 import java.awt.geom.Area;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class PathUtils extends QP {
+
+    // Call a logger so we can write to QuPath's log windows as needed
+    private final static Logger logger = LoggerFactory.getLogger(SimpleThresholdDetection.class);
+
     /**
-     * Splits the defined pathobject using the provided splitter. it's basically a subtract but
-     * NOTE that this method will not return any shapes with holes, so please be aware of this limitation
-     * objects that end up separated become new PathObjects
-     * @param pathObject the object that will be split.
-     * @param splitter the object used for splitting
-     * @return a List of PathObject with the resulting Paths
+     * returns the area of the current PathObject in calibrated units. If the area is not defined (like points) it returns 0
+     * @param object the object to try and compute the area from
+     * @return
      */
+    public static double getAreaMicrons(PathObject object) {
+        double pixel_size = getCurrentImageData( ).getServer( ).getAveragedPixelSizeMicrons( );
+        Double area = getArea( object );
+        return area * pixel_size * pixel_size;
+    }
+
+    /**
+     * returns the area of the current PathObject in pixels
+     * @param object the object to try and compute the area from
+     * @return
+     */
+    public static double getArea(PathObject object) {
+        ROI roi = object.getROI();
+        if (roi instanceof AreaROI) {
+            return ( (AreaROI) roi ).getArea( );
+        }
+        logger.warn( "Area for PathObject {} is undefined because it is of class {}", object.getDisplayedName(), object.getClass().toString() );
+        return 0;
+    }
+
+
+        /**
+         * Splits the defined pathobject using the provided splitter. it's basically a subtract but
+         * NOTE that this method will not return any shapes with holes, so please be aware of this limitation
+         * objects that end up separated become new PathObjects
+         *
+         * @param pathObject the object that will be split.
+         * @param splitter   the object used for splitting
+         * @return a List of PathObject with the resulting Paths
+         */
     public static List<PathObject> splitObject(PathObject pathObject, PathObject splitter) {
 
         // Convert the line to an Area, so we can use combineROIs
-        ROI area = splitter.getROI() instanceof LineROI ? LineToArea(splitter.getROI(), 2 ) : splitter.getROI();
+        ROI area = splitter.getROI() instanceof LineROI ? LineToArea(splitter.getROI(), 2) : splitter.getROI();
 
-        PathShape splitObject = PathROIToolsAwt.combineROIs( (PathShape) pathObject.getROI(), (PathShape) area, PathROIToolsAwt.CombineOp.SUBTRACT);
+        PathShape splitObject = PathROIToolsAwt.combineROIs((PathShape) pathObject.getROI(), (PathShape) area, PathROIToolsAwt.CombineOp.SUBTRACT);
 
         // This method, by Pete, separates the areas into separate polygons
         PolygonROI[][] split = PathROIToolsAwt.splitAreaToPolygons((AreaROI) splitObject);
 
         List<PathObject> objects = new ArrayList<>(split[1].length);
-        for(int i=0; i<split[1].length; i++) {
+        for (int i = 0; i < split[1].length; i++) {
             objects.add(new PathAnnotationObject(split[1][i]));
         }
 
@@ -46,7 +82,8 @@ public class PathUtils extends QP {
 
     /**
      * Converts a line to a very thin 4 sided polygon, so it has an area
-     * @param line the line roi to transform
+     *
+     * @param line      the line roi to transform
      * @param thickness how thick the polygon should be (the width of the rectangle)
      * @return a new ROI that is a PolygonROI
      */
@@ -61,26 +98,26 @@ public class PathUtils extends QP {
             double dx = px2 - px1;
             double dy = py2 - py1;
 
-            double norm = Math.sqrt( dx * dx + dy * dy );
+            double norm = Math.sqrt(dx * dx + dy * dy);
 
             double normalx = -1 * dy / norm;
             double normaly = dx / norm;
             // define 4 points separated by thickness
             ArrayList<Point2> points = new ArrayList<Point2>(4);
-            double p1x = px1 + normalx * thickness/2;
-            double p1y = py1 + normaly * thickness/2;
+            double p1x = px1 + normalx * thickness / 2;
+            double p1y = py1 + normaly * thickness / 2;
             points.add(new Point2(p1x, p1y));
 
-            double p2x = px1 - normalx * thickness/2;
-            double p2y = py1 - normaly * thickness/2;
+            double p2x = px1 - normalx * thickness / 2;
+            double p2y = py1 - normaly * thickness / 2;
             points.add(new Point2(p2x, p2y));
 
-            double p3x = px2 - normalx * thickness/2;
-            double p3y = py2 - normaly * thickness/2;
+            double p3x = px2 - normalx * thickness / 2;
+            double p3y = py2 - normaly * thickness / 2;
             points.add(new Point2(p3x, p3y));
 
-            double p4x = px2 + normalx * thickness/2;
-            double p4y = py2 + normaly * thickness/2;
+            double p4x = px2 + normalx * thickness / 2;
+            double p4y = py2 + normaly * thickness / 2;
             points.add(new Point2(p4x, p4y));
 
             ROI result = new PolygonROI(points, line.getC(), line.getZ(), line.getT());
@@ -90,210 +127,110 @@ public class PathUtils extends QP {
         return null;
     }
 
+    /**
+     * This method tries to merge all the pathobjects that are touching, but keeping all others intact
+     *
+     * @param objects
+     * @return
+     */
+    public static List<PathObject> mergeTouchingPathObjects(List<PathObject> objects) {
+        logger.info("Merging Touching objects from list with {} elements", objects.size());
+        List<HashSet<PathObject>> candidates = objects.parallelStream().map( ob1 -> {
+            // First check if the bounding boxes touch, which will define those that are worth doing all the mess for
+            Area s1 = PathROIToolsAwt.getArea(ob1.getROI());
 
-/*
-    public static PathCellObject makeCellObject(PathObject pathObject, double radiusPixels) {
+            HashSet<PathObject> touching = objects.parallelStream().filter(ob2 -> {
+                if (boundsOverlap(ob1,ob2) ){
 
-        ROI roi = pathObject.getROI();
-        Shape shape = PathROIToolsAwt.getShape(pathObject.getROI());
+                    Area s2 = PathROIToolsAwt.getArea(ob2.getROI());
+                    s2.intersect(s1);
+                    return !s2.isEmpty();
 
-        Area area = PathROIToolsAwt.shapeMorphology(shape, radiusPixels);
-
-        // If the radius is negative (i.e. a dilation), then the parent will be the original object itself
-        boolean isErosion = radiusPixels < 0;
-
-        if (isErosion) {
-            Area area2 = new Area(shape);
-            area2.subtract(area);
-            area = area2;
-        } else
-            area.subtract(new Area(shape));
-
-        ROI roi2 = PathROIToolsAwt.getShapeROI(area, roi.getC(), roi.getZ(), roi.getT(), 0.5);
-
-        ROI nucleus = isErosion ? roi2 : pathObject.getROI();
-        ROI cell = isErosion ? pathObject.getROI() : roi2;
-
-        // Create a new annotation, with properties based on the original
-        PathCellObject newCell = new PathCellObject(cell, nucleus, pathObject.getPathClass());
-        newCell.setName("Cell " + pathObject.getName());
-
-        newCell.setColorRGB(pathObject.getColorRGB());
-        return newCell;
-    }
-
-    MeasurementList addFluoMeasurements(PathObject pathObject, double downsampleFactor) {
-
-        QuPathGUI qupath = QuPathGUI.getInstance();
-
-        ImageData imagedata = getCurrentImageData();
-
-        double pxWidth  = imagedata.getServer().getPixelWidthMicrons();
-        double pxHeight = imagedata.getServer().getPixelHeightMicrons();
-        PathImage<ImagePlus> pathImage = PathImagePlus.createPathImage(imagedata.getServer(), pathObject.getROI(), downsampleFactor);
-
-        Map<String, FloatProcessor> channels = new LinkedHashMap<>();
-
-        ImagePlus imp = pathImage.getImage();
-        for (int c = 1; c <= imp.getNChannels(); c++) {
-            channels.put("Channel " + c, imp.getStack().getProcessor(imp.getStackIndex(c, 0, 0)).convertToFloatProcessor());
-        }
-
-
-
-        // Create nucleus objects
-        MeasurementList measurementList = MeasurementListFactory.createMeasurementList(30, MeasurementList.TYPE.FLOAT);
-
-        ObjectMeasurements.addShapeStatistics(measurementList, (PolygonROI) pathObject.getROI() , pxWidth, pxHeight, "Nucleus: ");
-        ObjectMeasurements.addIntensityMeasurements();
-        if(pathObject instanceof PathCellObject) {
-            PathCellObject cell = (PathCellObject) pathObject;
-            ObjectMeasurements.addShapeStatistics(measurementList, (PolygonROI) cell.getNucleusROI() , pxWidth, pxHeight, "Cell: ");
-            // Make cytoplasm
-
-
-        SimpleImage imgLabels = new PixelImageIJ(ipLabels);
-        for (String key : channels.keySet()) {
-            java.util.List<RunningStatistics> statsList = StatisticsHelper.createRunningStatisticsList(roisNuclei.size());
-            StatisticsHelper.computeRunningStatistics(new PixelImageIJ(channels.get(key)), imgLabels, statsList);
-            statsMap.put(key, statsList);
-        }
-
-                for (String key : channels.keySet()) {
-                    List<RunningStatistics> statsList = statsMap.get(key);
-                    RunningStatistics stats = statsList.get(i);
-                    measurementList.addMeasurement("Nucleus: " + key + " mean", stats.getMean());
-                    measurementList.addMeasurement("Nucleus: " + key + " sum", stats.getSum());
-                    measurementList.addMeasurement("Nucleus: " + key + " std dev", stats.getStdDev());
-                    measurementList.addMeasurement("Nucleus: " + key + " max", stats.getMax());
-                    measurementList.addMeasurement("Nucleus: " + key + " min", stats.getMin());
-                    measurementList.addMeasurement("Nucleus: " + key + " range", stats.getRange());
-                }
-            }
-
-            // TODO: It would be more efficient to measure the hematoxylin intensities along with the shapes
-            PathObject pathObject = new PathDetectionObject(pathROI, null, measurementList);
-            nucleiObjects.add(pathObject);
-
-        }
-
-        if (Thread.currentThread().isInterrupted())
-            return;
-
-        List<Roi> roisCellsList = null;
-
-        // Optionally expand the nuclei to become cells
-        if (cellExpansion > 0) {
-            FloatProcessor fpEDM = new EDM().makeFloatEDM(bp, (byte)255, false);
-            fpEDM.multiply(-1);
-
-            double cellExpansionThreshold = -cellExpansion;
-
-            // Create cell ROIs
-            ImageProcessor ipLabelsCells = ipLabels.duplicate();
-            Watershed.doWatershed(fpEDM, ipLabelsCells, cellExpansionThreshold, false);
-            PolygonRoi[] roisCells = ROILabeling.labelsToFilledROIs(ipLabelsCells, roisNuclei.size());
-
-            // Compute cell DAB stats
-            Map<String, List<RunningStatistics>> statsMapCell = new LinkedHashMap<>();
-            if (makeMeasurements) {
-                for (String key : channelsCell.keySet()) {
-                    List<RunningStatistics> statsList = StatisticsHelper.createRunningStatisticsList(roisNuclei.size());
-                    StatisticsHelper.computeRunningStatistics(new PixelImageIJ(channelsCell.get(key)), new PixelImageIJ(ipLabelsCells), statsList);
-                    statsMapCell.put(key, statsList);
-                }
-            }
-
-            // Create labelled image for cytoplasm, i.e. remove all nucleus pixels
-            // TODO: Make a buffer zone between nucleus and cytoplasm!
-            for (int i = 0; i < ipLabels.getWidth() * ipLabels.getHeight(); i++) {
-                if (ipLabels.getf(i) != 0)
-                    ipLabelsCells.setf(i, 0f);
-            }
-
-            // Compute cytoplasm stats
-            Map<String, List<RunningStatistics>> statsMapCytoplasm = new LinkedHashMap<>();
-            if (makeMeasurements) {
-                for (String key : channelsCell.keySet()) {
-                    List<RunningStatistics> statsList = StatisticsHelper.createRunningStatisticsList(roisNuclei.size());
-                    StatisticsHelper.computeRunningStatistics(new PixelImageIJ(channelsCell.get(key)), new PixelImageIJ(ipLabelsCells), statsList);
-                    statsMapCytoplasm.put(key, statsList);
-                }
-            }
-
-
-            // Create cell objects
-            roisCellsList = new ArrayList<>(roisCells.length); // In case we need texture measurements, store all cell ROIs
-            for (int i = 0; i < roisCells.length; i++) {
-                PolygonRoi r = roisCells[i];
-                if (r == null)
-                    continue;
-                if (smoothBoundaries)
-                    r = new PolygonRoi(r.getInterpolatedPolygon(Math.min(2.5, r.getNCoordinates()*0.1), false), Roi.POLYGON); // TODO: Check this smoothing - it can be troublesome, causing nuclei to be outside cells
-//						r = smoothPolygonRoi(r);
-
-                PolygonROI pathROI = ROIConverterIJ.convertToPolygonROI(r, pathImage.getImage().getCalibration(), pathImage.getDownsampleFactor(), 0, z, t);
-                if (smoothBoundaries)
-                    pathROI = ShapeSimplifier.simplifyPolygon(pathROI, pathImage.getDownsampleFactor()/4.0);
-
-
-                MeasurementList measurementList = null;
-                PathObject nucleus = null;
-                if (includeNuclei) {
-                    // Use the nucleus' measurement list
-                    nucleus = nucleiObjects.get(i);
-                    measurementList = nucleus.getMeasurementList();
                 } else {
-                    // Create a new measurement list
-                    measurementList = MeasurementListFactory.createMeasurementList(makeMeasurements ? 12 : 0, MeasurementList.TYPE.GENERAL);
+                    return false;
                 }
+            }).collect(Collectors.toCollection(HashSet::new));
 
-                // Add cell shape measurements
-                if (makeMeasurements) {
-                    ObjectMeasurements.addShapeStatistics(measurementList, r, fpDetection, pathImage.getImage().getCalibration(), "Cell: ");
-                    //					ObjectMeasurements.computeShapeStatistics(pathObject, pathImage, fpH, pathImage.getImage().getCalibration());
+            return touching;
+        }).collect(Collectors.toList());
 
-                    // Add cell measurements
-                    for (String key : channelsCell.keySet()) {
-                        if (statsMapCell.containsKey(key)) {
-                            RunningStatistics stats = statsMapCell.get(key).get(i);
-                            measurementList.addMeasurement("Cell: " + key + " mean", stats.getMean());
-                            measurementList.addMeasurement("Cell: " + key + " std dev", stats.getStdDev());
-                            measurementList.addMeasurement("Cell: " + key + " max", stats.getMax());
-                            measurementList.addMeasurement("Cell: " + key + " min", stats.getMin());
-                            //						pathObject.addMeasurement("Cytoplasm: " + key + " range", stats.getRange());
-                        }
-                    }
+        logger.info("Looking for candidate merges done {} candidates", candidates.size());
 
-                    // Add cytoplasm measurements
-                    for (String key : channelsCell.keySet()) {
-                        if (statsMapCytoplasm.containsKey(key)) {
-                            RunningStatistics stats = statsMapCytoplasm.get(key).get(i);
-                            measurementList.addMeasurement("Cytoplasm: " + key + " mean", stats.getMean());
-                            measurementList.addMeasurement("Cytoplasm: " + key + " std dev", stats.getStdDev());
-                            measurementList.addMeasurement("Cytoplasm: " + key + " max", stats.getMax());
-                            measurementList.addMeasurement("Cytoplasm: " + key + " min", stats.getMin());
-                            //						pathObject.addMeasurement("Cytoplasm: " + key + " range", stats.getRange());
-                        }
-                    }
+        logger.info("Removing single objects...");
 
-                    // Add nucleus area ratio, if available
-                    if (nucleus != null && nucleus.getROI() instanceof PathArea) {
-                        double nucleusArea = ((PathArea)nucleus.getROI()).getArea();
-                        double cellArea = pathROI.getArea();
-                        measurementList.addMeasurement("Nucleus/Cell area ratio", Math.min(nucleusArea / cellArea, 1.0));
-                        //						measurementList.addMeasurement("Nucleus/Cell expansion", cellArea - nucleusArea);
-                    }
+        // Need to see if any element in each list matches, if that's the case we add them all to the first list and remove the older lis
+        // remove all the ones that are alone, we do not touch these
+        List<HashSet<PathObject>> forSort = candidates.stream().filter(touching -> touching.size() > 1).collect(Collectors.toList());
+
+        List<HashSet<PathObject>> untouched = candidates.stream().filter(touching -> touching.size() == 1).collect(Collectors.toList());
+
+        logger.info("Removing single candidates done: {} candidates left", forSort.size());
+
+// Go through it checking that there are no duplicates and remove them if any
+        for (int i = forSort.size()-1; i >= 0; i--) {
+            for (int j = i-1; j >= 0; j--) {
+                int finalJ = j;
+                if (forSort.get(i).stream().anyMatch(forSort.get(finalJ)::contains)) {
+                    forSort.get(i).addAll(forSort.get(j));
+                    forSort.remove(forSort.get(j));
+                    i--;
                 }
-
-
-                // Create & store the cell object
-                PathObject pathObject = new PathCellObject(pathROI, nucleus == null ? null : nucleus.getROI(), null, measurementList);
-                pathObjects.add(pathObject);
-
-                roisCellsList.add(r);
             }
+        }
+
+        forSort.addAll(untouched);
+
+        List<PathObject> result = forSort.stream().map( candidate -> mergePathObjects(new ArrayList<PathObject>(candidate))).collect(Collectors.toList());
+
+        return result;
+    }
+
+
+    public static PathObject mergePathObjects(List<PathObject> pathobjects) {
+        // Get all the selected annotations with area
+        PathShape shapeNew = null;
+        List<PathObject> children = new ArrayList<>();
+        for (PathObject child : pathobjects) {
+            if (child.getROI() instanceof PathArea) {
+                if (shapeNew == null)
+                    shapeNew = (PathShape) child.getROI();//.duplicate();
+                else
+                    shapeNew = PathROIToolsAwt.combineROIs(shapeNew, (PathArea) child.getROI(), PathROIToolsAwt.CombineOp.ADD);
+                children.add(child);
+            }
+        }
+        // Check if we actually merged anything
+        if (children.isEmpty())
+            return null;
+        if (children.size() == 1)
+            return children.get(0);
+
+        // Create and add the new object, removing the old ones
+
+        PathObject pathObjectNew = null;
+
+        if (pathobjects.get(0) instanceof PathDetectionObject) {
+            pathObjectNew = new PathDetectionObject(shapeNew);
+        } else {
+            pathObjectNew = new PathAnnotationObject(shapeNew);
+        }
+
+        return pathObjectNew;
+    }
+
+    private static boolean boundsOverlap(PathObject ob1, PathObject ob2) {
+        double x11 = ob1.getROI().getBoundsX();
+        double y11 = ob1.getROI().getBoundsY();
+        double x12 = x11 + ob1.getROI().getBoundsWidth();
+        double y12 = y11 + ob1.getROI().getBoundsHeight();
+
+        double x21 = ob2.getROI().getBoundsX();
+        double y21 = ob2.getROI().getBoundsY();
+        double x22 = x21 + ob2.getROI().getBoundsWidth();
+        double y22 = y21 + ob2.getROI().getBoundsHeight();
+
+        return x12 >= x21 && x22 >= x11 && y12 >= y21 && y22 >= y11;
 
     }
-    */
 }
+
