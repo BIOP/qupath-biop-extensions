@@ -9,7 +9,6 @@ import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.images.ImageData;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathObject;
-
 import qupath.lib.plugins.parameters.ParameterList;
 import qupath.lib.roi.RectangleROI;
 
@@ -37,7 +36,7 @@ public class ScriptableMacroRunner {
     PathObject pathObject;
     QuPathViewer viewer;
 
-    ImageData<BufferedImage> imageData;
+    ImageData<?> imageData;
     ImageDisplay imageDisplay;
     String macroText;
 
@@ -56,8 +55,7 @@ public class ScriptableMacroRunner {
 
         // Initialize the MacroRunner with some sensible defaults
         this.viewer = QuPathGUI.getInstance().getViewer();
-        this.imageDisplay = viewer.getImageDisplay();
-        this.imageData = viewer.getImageData();
+        this.imageData = getCurrentImageData();
 
         // This gives us a default parameters list
         this.parameters = new ImageJMacroRunner(QuPathGUI.getInstance()).getParameterList(null);
@@ -138,7 +136,7 @@ public class ScriptableMacroRunner {
         if (this.parameters.getBooleanParameterValue("processWholeImage"))
             viewer.getHierarchy().addPathObject(this.pathObject, true);
 
-        ImageJMacroRunner.runMacro( this.parameters, this.imageData, this.imageDisplay, this.pathObject, this.macroText );
+        ImageJMacroRunner.runMacro( this.parameters, (ImageData<BufferedImage>) this.imageData, this.imageDisplay, this.pathObject, this.macroText );
 
         //Remove full image rectangle if we processed the whole image, but keep all child objects
         if (this.parameters.getBooleanParameterValue("processWholeImage"))

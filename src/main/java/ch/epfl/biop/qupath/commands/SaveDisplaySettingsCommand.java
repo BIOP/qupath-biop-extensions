@@ -11,7 +11,6 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.file.Path;
 
 public class SaveDisplaySettingsCommand implements PathCommand {
 
@@ -29,10 +28,10 @@ public class SaveDisplaySettingsCommand implements PathCommand {
     public void run() {
 
         String imageName = qupath.getViewer().getServer().getDisplayedImageName();
-        Path projectDirectory = qupath.getProject().getPath();
+        File projectDirectory = qupath.getProject().getBaseDirectory();
         DialogHelperFX dial = new DialogHelperFX();
 
-        File toSave = dial.promptToSaveFile("Save Display Settings", projectDirectory.toFile(), "Settings Based On " + imageName, null, "json");
+        File toSave = dial.promptToSaveFile("Save Display Settings", projectDirectory, "Settings Based On " + imageName, null, "json");
 
         apply(toSave);
 

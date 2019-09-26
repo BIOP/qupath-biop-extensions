@@ -2,7 +2,6 @@ package ch.epfl.biop.qupath.utils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import qupath.lib.gui.QuPathApp;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.models.ObservableMeasurementTableData;
 import qupath.lib.objects.PathObject;
@@ -69,7 +68,7 @@ public class Utils extends QP {
         Path filePath = Paths.get(resultsFile.getAbsolutePath());
 
         // Write the file, create if absent, append if it exists
-        try (BufferedWriter writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+        try ( BufferedWriter writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
             if (emptyFile) {
                 logger.warn("File {} is new, and will be created...", resultsFile.getName());
                 // Create the column names the first time
@@ -106,7 +105,7 @@ public class Utils extends QP {
     }
 
     static public void sendResultsToFile(ArrayList<String> resultColumns, ArrayList<PathObject> objects) {
-        File resultsFolder = new File(QuPathGUI.getInstance().getProject().getPath().toFile(), "results");
+        File resultsFolder = new File(QuPathGUI.getInstance().getProject().getBaseDirectory(), "results");
         File resultsFile = new File(resultsFolder, "results.txt");
         if (!resultsFolder.exists()) {
             resultsFolder.mkdirs();

@@ -14,7 +14,6 @@ import qupath.lib.projects.ProjectImageEntry;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.IOException;
 import java.util.List;
 
 public class ApplyDisplaySettingsCommand implements PathCommand {
@@ -47,17 +46,27 @@ public class ApplyDisplaySettingsCommand implements PathCommand {
         List<ProjectImageEntry<BufferedImage>> imageList = qupath.getProject().getImageList();
         imageList.parallelStream().forEach(entry -> {
             ImageData<BufferedImage> imageData = null;
-            try {
-                imageData = entry.readImageData();
-                ImageServer server = ImageServerProvider.buildServer(entry.getServerPath(), BufferedImage.class);
-                if (imageData == null) imageData = qupath.createNewImageData(server, true);
-                if (currentImageData.getImageType().equals(imageData.getImageType()) && currentServer.getMetadata().getSizeC() == server.getMetadata().getSizeC()) {
-                    logger.info("Saving Display Settings for Image {}", entry.getImageName());
-                    imageData.setProperty(ImageDisplay.class.getName(), currentImageDisplay.toJSON());
-                    entry.saveImageData(imageData);
-                }
-            } catch (IOException e) {
-                logger.error(e.getMessage(), e);
+
+            File imageDataFile = QuPathGUI.getImageDataFile( qupath.getProject( ), entry );
+
+            imageData = PathIO.readImageData( QuPathGUI.getImageDataFile(qupath.getProject(), entry), null, null, BufferedImage.class);
+
+            ImageServer server = ImageServerProvider.buildServer(entry.getServerPath(), BufferedImage.class);
+
+            if (imageData == null) imageData = qupath.createNewImageData(server, true);
+            if (currentImageData.getImageType().equals(imageData.getImageType()) && currentServer.getMetadata().getSizeC() == server.getMetadata().getSizeC()) {
+                logger.info("Saving Display Settings for Image {}", entry.getImageName());
+                imageData.setProperty(ImageDisplay.class.getName(), currentImageDisplay.toJSON());
+                PathIO.writeImageData(imageDataFile, imageData);
+            } else {
+                logger.info( "Did not copy Display settings from {} to {}.\n" +
+                                "Incompatible images: \n" +
+                                        "\t\tType is {} vs {} \n" +
+                                        "\t\t Channel number is {} vs {}",
+                        currentServer.getDisplayedImageName(), server.getDisplayedImageName(),
+                        currentImageData.getImageType(), imageData.getImageType(),
+                        currentServer.getMetadata().getSizeC(), server.getMetadata().getSizeC()
+                        );
             }
         });
 

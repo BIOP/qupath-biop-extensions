@@ -8,7 +8,10 @@ import qupath.lib.gui.commands.interfaces.PathCommand;
 import qupath.lib.gui.helpers.dialogs.DialogHelperFX;
 import qupath.lib.gui.viewer.QuPathViewer;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 
 public class LoadDisplaySettingsCommand implements PathCommand {
 
@@ -25,7 +28,7 @@ public class LoadDisplaySettingsCommand implements PathCommand {
     @Override
     public void run() {
 
-        File projectDirectory = qupath.getProject().getPath().toFile();
+        File projectDirectory = qupath.getProject().getBaseDirectory();
 
         DialogHelperFX dial = new DialogHelperFX();
         File toLoad = dial.promptForFile("Load Display Settings", projectDirectory, null, "json");
@@ -48,7 +51,7 @@ public class LoadDisplaySettingsCommand implements PathCommand {
             display.saveChannelColorProperties();
             display.updateChannelOptions(false);
 
-        } catch (IOException e) {
+        } catch ( IOException e) {
 
             e.printStackTrace();
 
