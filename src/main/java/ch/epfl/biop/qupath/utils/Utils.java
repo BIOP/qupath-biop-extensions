@@ -145,6 +145,10 @@ public class Utils extends QP {
         return ob;
     }
 
+    /**
+     * Returns the current pixel size of the active image in microns
+     * @return the pixel size in um/px
+     */
     public static double getPixelSize() {
         return getCurrentImageData( ).getServer( ).getAveragedPixelSizeMicrons( );
     }
