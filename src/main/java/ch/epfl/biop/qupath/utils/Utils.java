@@ -1,5 +1,6 @@
 package ch.epfl.biop.qupath.utils;
 
+import ij.measure.ResultsTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.gui.QuPathGUI;
@@ -7,6 +8,7 @@ import qupath.lib.gui.models.ObservableMeasurementTableData;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.scripting.QP;
+import qupath.lib.scripting.QPEx;
 
 import java.io.*;
 import java.net.URL;
@@ -18,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -44,6 +47,22 @@ public class Utils extends QP {
 
         String delimiter = "\t";
 
+        // We use a ResultsTable to store the data and we need to see if it exists so that we can append to it
+        ResultsTable results;
+
+        if ( resultsFile.exists() ) {
+            // Try to open the previous results table
+            try {
+                results = ResultsTable.open( resultsFile.getAbsolutePath( ) );
+            } catch ( IOException e ) {
+                logger.error( "Could not reopen results file {}, either the file is locked or it is not a results table.", resultsFile.getName( ) );
+                results = new ResultsTable( );
+
+            }
+        } else {
+            // New Results Table
+            results = new ResultsTable( );
+        }
 
         ObservableMeasurementTableData ob = new ObservableMeasurementTableData();
         // This line creates all the measurements
@@ -60,48 +79,31 @@ public class Utils extends QP {
             subImageName  = splitName[1];
 
         }
-        // Check for empty file, should we create or append?
-        boolean emptyFile = !resultsFile.exists();
+        // Add value for each selected object
+        for (PathObject pathObject : objects) {
+            results.incrementCounter( );
+            results.addValue( "Image Name", imageName );
+            results.addValue( "Subimage Name", subImageName );
 
-
-        // Create a Path, because Java 8 is so much better with Paths...
-        Path filePath = Paths.get(resultsFile.getAbsolutePath());
-
-        // Write the file, create if absent, append if it exists
-        try ( BufferedWriter writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-            if (emptyFile) {
-                logger.warn("File {} is new, and will be created...", resultsFile.getName());
-                // Create the column names the first time
-                writer.write("Image Name" + delimiter);
-                if (rawImageName.contains("::"))
-                    writer.write("Subimage Name" + delimiter);
-
-                for (String col : resultColumns) {
-                    writer.write(col + delimiter);
+            // Check if image has associated metadata and add it as columns
+            if ( QPEx.getProjectEntry( ).getMetadataKeys( ).size( ) > 0 ) {
+                Collection<String> keys = QPEx.getProjectEntry( ).getMetadataKeys( );
+                for ( String key : keys ) {
+                    results.addValue( "Metadata_" + key, QPEx.getProjectEntry( ).getMetadataValue( key ) );
                 }
-                writer.newLine();
-            } else {
-                logger.warn("File {} already exists, and will be appended...", resultsFile.getName());
             }
 
-            // Write all the results
-            for (PathObject pathObject : objects) {
-
-                // We need to add the image name manually and the subimage
-                writer.write(imageName + delimiter);
-                if (rawImageName.contains("::"))
-                    writer.write(subImageName + delimiter);
-
-                // Then we can add the results the user requested
-                for (String col : resultColumns) {
-                    String value = ob.getStringValue(pathObject, col);
-                    writer.write(value + delimiter);
-                }
-                writer.newLine();
+            // Then we can add the results the user requested
+            for ( String col : resultColumns ) {
+                String value = ob.getStringValue( pathObject, col );
+                if ( ob.isNumericMeasurement( col ) )
+                    results.addValue( col.replace( Utils.um, "um" ), ob.getNumericValue( pathObject, col ) );
+                if ( ob.isStringMeasurement( col ) )
+                    results.addValue( col.replace( Utils.um, "um" ), ob.getStringValue( pathObject, col ) );
             }
-        } catch (Exception e) {
-            logger.error("Could not write results to file", e);
         }
+        results.save( resultsFile.getAbsolutePath() );
+        logger.info( "Results {} Saved under {}, contains {} rows", resultsFile.getName(), resultsFile.getParentFile().getAbsolutePath(), results.size() );
     }
 
     static public void sendResultsToFile(ArrayList<String> resultColumns, ArrayList<PathObject> objects) {

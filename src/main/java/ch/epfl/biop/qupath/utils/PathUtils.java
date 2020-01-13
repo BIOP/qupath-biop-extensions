@@ -3,7 +3,6 @@ package ch.epfl.biop.qupath.utils;
 import ch.epfl.biop.qupath.plugins.SimpleThresholdDetection;
 import ij.IJ;
 import ij.ImagePlus;
-import ij.gui.GUI;
 import ij.gui.PolygonRoi;
 import ij.gui.Roi;
 import ij.gui.ShapeRoi;
@@ -43,11 +42,8 @@ import qupath.lib.scripting.QP;
 
 import java.awt.*;
 import java.awt.geom.Area;
-import java.awt.image.BufferedImage;
-import java.awt.peer.ListPeer;
-import java.util.*;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class PathUtils extends QP {
@@ -55,7 +51,11 @@ public class PathUtils extends QP {
     // Call a logger so we can write to QuPath's log windows as needed
     private final static Logger logger = LoggerFactory.getLogger( SimpleThresholdDetection.class );
 
-
+    /**
+     * returns a rectangle with teh whole dataset as an annotation.
+     * It does not add it to the Hierarchy
+     * @return an Annotation Object with the whole image
+     */
     public static PathObject getFullImageAnnotation( ) {
         ImageData<?> imageData = getCurrentImageData( );
         if ( imageData == null )

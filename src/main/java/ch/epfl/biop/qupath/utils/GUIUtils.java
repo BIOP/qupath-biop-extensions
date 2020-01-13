@@ -245,6 +245,17 @@ public class GUIUtils extends QPEx {
         setChannelColor(selectedChannel.getName(), color);
     }
 
+    public static Integer getChannelColor(int channel ) {
+        ChannelDisplayInfo selectedChannel = getSelectedChannelInfo(channel);
+        Integer rgb = selectedChannel.getColor( );
+        return rgb;
+    }
+
+    public static Integer getChannelColor(String channel ) {
+        ChannelDisplayInfo selectedChannel = getSelectedChannelInfo(channel);
+        Integer rgb = selectedChannel.getColor( );
+        return rgb;
+    }
     /**
      * Saves the current display settings to a desired file
      *
