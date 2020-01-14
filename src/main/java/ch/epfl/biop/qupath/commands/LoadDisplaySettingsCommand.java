@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.commands.interfaces.PathCommand;
-import qupath.lib.gui.helpers.dialogs.DialogHelperFX;
+import qupath.lib.gui.dialogs.DialogHelperFX;
 import qupath.lib.gui.viewer.QuPathViewer;
 
 import java.io.BufferedReader;
@@ -28,9 +28,9 @@ public class LoadDisplaySettingsCommand implements PathCommand {
     @Override
     public void run() {
 
-        File projectDirectory = qupath.getProject().getBaseDirectory();
+        File projectDirectory = qupath.getProject().getPath().toFile();
 
-        DialogHelperFX dial = new DialogHelperFX();
+        DialogHelperFX dial = new DialogHelperFX( null );
         File toLoad = dial.promptForFile("Load Display Settings", projectDirectory, null, "json");
 
         apply(toLoad);
@@ -40,7 +40,7 @@ public class LoadDisplaySettingsCommand implements PathCommand {
     public void apply(File toLoad) {
 
         QuPathViewer viewer = qupath.getViewer();
-        ImageDisplay display = qupath.getViewer().getImageDisplay();
+        ImageDisplay display = viewer.getImageDisplay();
 
         try {
 
@@ -52,9 +52,7 @@ public class LoadDisplaySettingsCommand implements PathCommand {
             display.updateChannelOptions(false);
 
         } catch ( IOException e) {
-
             e.printStackTrace();
-
         }
 
         viewer.repaintEntireImage();

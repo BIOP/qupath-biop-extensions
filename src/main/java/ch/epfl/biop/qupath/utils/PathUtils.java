@@ -1,6 +1,5 @@
 package ch.epfl.biop.qupath.utils;
 
-import ch.epfl.biop.qupath.plugins.SimpleThresholdDetection;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.PolygonRoi;
@@ -13,13 +12,12 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import qupath.imagej.color.ColorDeconvolutionIJ;
-import qupath.imagej.objects.ROIConverterIJ;
-import qupath.imagej.objects.measure.ObjectMeasurements;
-import qupath.imagej.processing.ROILabeling;
+import qupath.imagej.detect.cells.ObjectMeasurements;
+import qupath.imagej.processing.RoiLabeling;
 import qupath.imagej.processing.Watershed;
-import qupath.imagej.wrappers.PixelImageIJ;
-import qupath.lib.analysis.algorithms.SimpleImage;
+import qupath.imagej.tools.IJTools;
+import qupath.imagej.tools.PixelImageIJ;
+import qupath.lib.analysis.images.SimpleImage;
 import qupath.lib.analysis.stats.RunningStatistics;
 import qupath.lib.analysis.stats.StatisticsHelper;
 import qupath.lib.color.ColorDeconvolutionStains;
@@ -29,14 +27,9 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.measurements.MeasurementList;
 import qupath.lib.measurements.MeasurementListFactory;
-import qupath.lib.objects.PathAnnotationObject;
-import qupath.lib.objects.PathCellObject;
-import qupath.lib.objects.PathDetectionObject;
-import qupath.lib.objects.PathObject;
+import qupath.lib.objects.*;
+import qupath.lib.regions.ImagePlane;
 import qupath.lib.roi.*;
-import qupath.lib.roi.experimental.ShapeSimplifier;
-import qupath.lib.roi.interfaces.PathArea;
-import qupath.lib.roi.interfaces.PathShape;
 import qupath.lib.roi.interfaces.ROI;
 import qupath.lib.scripting.QP;
 
@@ -49,7 +42,7 @@ import java.util.stream.Collectors;
 public class PathUtils extends QP {
 
     // Call a logger so we can write to QuPath's log windows as needed
-    private final static Logger logger = LoggerFactory.getLogger( SimpleThresholdDetection.class );
+    private final static Logger logger = LoggerFactory.getLogger( PathUtils.class );
 
     /**
      * returns a rectangle with teh whole dataset as an annotation.
@@ -60,8 +53,8 @@ public class PathUtils extends QP {
         ImageData<?> imageData = getCurrentImageData( );
         if ( imageData == null )
             return null;
-        ImageServer<?> server = imageData.getServer( );
-        PathObject pathObject = new PathAnnotationObject( new RectangleROI( 0, 0, server.getWidth( ), server.getHeight( ), 0, 0, 0 ) );
+        ImageServer server = imageData.getServer( );
+        PathObject pathObject = PathObjects.createAnnotationObject( ROIs.createRectangleROI( 0, 0, server.getWidth( ), server.getHeight( ), null ) );
         return pathObject;
     }
 
@@ -85,11 +78,7 @@ public class PathUtils extends QP {
      */
     public static double getArea( PathObject object ) {
         ROI roi = object.getROI( );
-        if ( roi instanceof AbstractPathAreaROI ) {
-            return ( (AbstractPathAreaROI) roi ).getArea( );
-        }
-        logger.warn( "Area for PathObject {} is undefined because it is of class {}", object.getDisplayedName( ), object.getROI( ).getClass( ).toString( ) );
-        return 0;
+        return roi.getArea();
     }
 
     /**
@@ -106,14 +95,15 @@ public class PathUtils extends QP {
         // Convert the line to an Area, so we can use combineROIs
         ROI area = splitter.getROI( ) instanceof LineROI ? LineToArea( splitter.getROI( ), 2 ) : splitter.getROI( );
 
-        PathShape splitObject = PathROIToolsAwt.combineROIs( (PathShape) pathObject.getROI( ), (PathShape) area, PathROIToolsAwt.CombineOp.SUBTRACT );
+        ROI splitObject = RoiTools.combineROIs( pathObject.getROI( ), area, RoiTools.CombineOp.SUBTRACT );
 
         // This method, by Pete, separates the areas into separate polygons
-        PolygonROI[][] split = PathROIToolsAwt.splitAreaToPolygons( (AreaROI) splitObject );
+        PolygonROI[][] split = RoiTools.splitAreaToPolygons( RoiTools.getArea( splitObject ), area.getC(), area.getZ(), area.getT() );
+
 
         List<PathObject> objects = new ArrayList<>( split[ 1 ].length );
         for ( int i = 0; i < split[ 1 ].length; i++ ) {
-            objects.add( new PathAnnotationObject( split[ 1 ][ i ] ) );
+            objects.add( PathObjects.createAnnotationObject( split[ 1 ][ i ] ) );
         }
 
         return objects;
@@ -159,14 +149,17 @@ public class PathUtils extends QP {
             double p4y = py2 + normaly * thickness / 2;
             points.add( new Point2( p4x, p4y ) );
 
-            ROI result = new PolygonROI( points, line.getC( ), line.getZ( ), line.getT( ) );
-            PathDetectionObject def = new PathDetectionObject( result );
+            ROI result = ROIs.createPolygonROI( points, null );
+            PathObject def = PathObjects.createDetectionObject( result );
+
             return result;
         }
         return null;
     }
 
     public static List<PathObject> createCellObjects( PathObject parent, List<PathObject> objects, double thickness_um ) {
+
+        ImagePlane plane = parent.getROI().getImagePlane();
 
         int c = parent.getROI( ).getC( );
         int z = parent.getROI( ).getZ( );
@@ -184,7 +177,7 @@ public class PathUtils extends QP {
         Map<String, FloatProcessor> channelsCell = new LinkedHashMap<>( );
 
         if ( ip instanceof ColorProcessor && stains != null ) {
-            FloatProcessor[] fps = ColorDeconvolutionIJ.colorDeconvolve( (ColorProcessor) ip, stains.getStain( 1 ), stains.getStain( 2 ), stains.getStain( 3 ) );
+            FloatProcessor[] fps = IJTools.colorDeconvolve( (ColorProcessor) ip, stains );
             for ( int i = 0; i < 3; i++ ) {
                 StainVector stain = stains.getStain( i + 1 );
                 if ( !stain.isResidual( ) ) {
@@ -220,7 +213,7 @@ public class PathUtils extends QP {
         int id = 1;
         for ( PathObject object : objects ) {
 
-            Shape shape = PathROIToolsAwt.getShape( object.getROI( ) );
+            Shape shape = RoiTools.getShape( object.getROI( ) );
             Roi r = new ShapeRoi( shape );
             roisNuclei.add( r );
             ipLabels.setValue( id );
@@ -239,7 +232,7 @@ public class PathUtils extends QP {
         ImageProcessor ipLabelsCells = ipLabels.duplicate( );
         Watershed.doWatershed( fpEDM, ipLabelsCells, -thickness_px, false );
 
-        PolygonRoi[] roisCells = ROILabeling.labelsToFilledROIs( ipLabelsCells, objects.size( ) );
+        PolygonRoi[] roisCells = RoiLabeling.labelsToFilledROIs( ipLabelsCells, objects.size( ) );
 
         // Measure nuclei for all required channels
         Map<String, List<RunningStatistics>> statsMap = new LinkedHashMap<>( );
@@ -261,11 +254,11 @@ public class PathUtils extends QP {
                 continue;
             cellRoi = new PolygonRoi( cellRoi.getInterpolatedPolygon( Math.min( 2.5, cellRoi.getNCoordinates( ) * 0.1 ), false ), Roi.POLYGON );
 
-            PolygonROI pathROI = ROIConverterIJ.convertToPolygonROI( cellRoi, labels.getCalibration( ), 1, c, z, t );
+            PolygonROI pathROI = IJTools.convertToPolygonROI( cellRoi, labels.getCalibration( ), 1, plane );
             pathROI = ShapeSimplifier.simplifyPolygon( pathROI, 1 / 4.0 );
 
             // Create a new shared measurement list for the nuclei
-            MeasurementList measurementList = MeasurementListFactory.createMeasurementList( 30, MeasurementList.TYPE.FLOAT );
+            MeasurementList measurementList = MeasurementListFactory.createMeasurementList( 30, MeasurementList.MeasurementListType.FLOAT );
 
             ObjectMeasurements.addShapeStatistics( measurementList, nucRoi, image.getProcessor( ), cal, "Nucleus: " );
 
@@ -331,20 +324,20 @@ public class PathUtils extends QP {
             }
 
             // Add nucleus area ratio, if available
-            double nucleusArea = ( (PathArea) objects.get( i ).getROI( ) ).getArea( );
+            double nucleusArea =  objects.get( i ).getROI( ).getArea( );
             double cellArea = pathROI.getArea( );
             measurementList.addMeasurement( "Nucleus/Cell area ratio", Math.min( nucleusArea / cellArea, 1.0 ) );
 
 
 
-            PathObject pathObject = new PathCellObject( pathROI, objects.get( i ).getROI( ), null, measurementList );
+            PathObject pathObject = PathObjects.createCellObject( pathROI, objects.get( i ).getROI( ), null, measurementList );
             pathObjects.add( pathObject );
 
         }
 
         // Close the measurement lists
         for (PathObject pathObject : pathObjects)
-            pathObject.getMeasurementList().closeList();
+            pathObject.getMeasurementList().close();
 
 
         return pathObjects;
@@ -362,12 +355,12 @@ public class PathUtils extends QP {
         logger.info( "Merging Touching objects from list with {} elements", objects.size( ) );
         List<HashSet<PathObject>> candidates = objects.parallelStream( ).map( ob1 -> {
             // First check if the bounding boxes touch, which will define those that are worth doing all the mess for
-            Area s1 = PathROIToolsAwt.getArea( ob1.getROI( ) );
+            Area s1 = RoiTools.getArea( ob1.getROI( ) );
 
             HashSet<PathObject> touching = objects.parallelStream( ).filter( ob2 -> {
                 if ( boundsOverlap( ob1, ob2 ) ) {
 
-                    Area s2 = PathROIToolsAwt.getArea( ob2.getROI( ) );
+                    Area s2 = RoiTools.getArea( ob2.getROI( ) );
                     s2.intersect( s1 );
                     return !s2.isEmpty( );
 
@@ -413,17 +406,15 @@ public class PathUtils extends QP {
 
     public static PathObject mergePathObjects( List<PathObject> pathobjects ) {
         // Get all the selected annotations with area
-        PathShape shapeNew = null;
+        ROI shapeNew = null;
         List<PathObject> children = new ArrayList<>( );
         for ( PathObject child : pathobjects ) {
-            if ( child.getROI( ) instanceof PathArea ) {
                 if ( shapeNew == null )
-                    shapeNew = (PathShape) child.getROI( );//.duplicate();
+                    shapeNew = child.getROI( );//.duplicate();
                 else
-                    shapeNew = PathROIToolsAwt.combineROIs( shapeNew, (PathArea) child.getROI( ), PathROIToolsAwt.CombineOp.ADD );
+                    shapeNew = RoiTools.combineROIs( shapeNew, child.getROI( ), RoiTools.CombineOp.ADD );
                 children.add( child );
             }
-        }
         // Check if we actually merged anything
         if ( children.isEmpty( ) )
             return null;
@@ -435,9 +426,9 @@ public class PathUtils extends QP {
         PathObject pathObjectNew = null;
 
         if ( pathobjects.get( 0 ) instanceof PathDetectionObject ) {
-            pathObjectNew = new PathDetectionObject( shapeNew );
+            pathObjectNew = PathObjects.createDetectionObject( shapeNew );
         } else {
-            pathObjectNew = new PathAnnotationObject( shapeNew );
+            pathObjectNew = PathObjects.createAnnotationObject( shapeNew );
         }
 
         return pathObjectNew;

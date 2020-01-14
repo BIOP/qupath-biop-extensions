@@ -3,10 +3,10 @@ package ch.epfl.biop.qupath.extensions;
 import ch.epfl.biop.qupath.commands.ApplyDisplaySettingsCommand;
 import ch.epfl.biop.qupath.commands.LoadDisplaySettingsCommand;
 import ch.epfl.biop.qupath.commands.SaveDisplaySettingsCommand;
-import ch.epfl.biop.qupath.plugins.SimpleThresholdDetection;
 import javafx.scene.control.Menu;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.extensions.QuPathExtension;
+import qupath.lib.gui.tools.MenuTools;
 
 public class BIOPExtension implements QuPathExtension {
     @Override
@@ -14,14 +14,12 @@ public class BIOPExtension implements QuPathExtension {
         ApplyDisplaySettingsCommand applyDisplaySettingsCommand = new ApplyDisplaySettingsCommand(qupath);
         SaveDisplaySettingsCommand saveDisplaySettingsCommand = new SaveDisplaySettingsCommand(qupath);
         LoadDisplaySettingsCommand loadDisplaySettingsCommand = new LoadDisplaySettingsCommand(qupath);
-        SimpleThresholdDetection simpleThresholdDetection = new SimpleThresholdDetection();
         Menu biop = qupath.getMenu("BIOP>Display Settings...", true);
-        QuPathGUI.addMenuItems(biop,
+        MenuTools.addMenuItems( biop,
                 QuPathGUI.createCommandAction(saveDisplaySettingsCommand, "Save current display settings to file..."),
                 QuPathGUI.createCommandAction(loadDisplaySettingsCommand, "Load display settings from file..."),
                 null,
-                QuPathGUI.createCommandAction(applyDisplaySettingsCommand, "Apply display settings to similar images in project..."),
-                qupath.createPluginAction("Simple Threshold Detection", SimpleThresholdDetection.class, null, false )
+                QuPathGUI.createCommandAction(applyDisplaySettingsCommand, "Apply display settings to similar images in project...")
         );
     }
 

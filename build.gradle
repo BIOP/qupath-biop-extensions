@@ -3,11 +3,11 @@ plugins {
 }
 
 group 'ch.epfl.biop.qupath'
-version '1.1.5-SNAPSHOT'
+version '2.0.0-SNAPSHOT'
 description = 'qupath-biop-extension'
 
 
-sourceCompatibility = 8
+sourceCompatibility = 11
 
 task copyJarToQuPath (type: Copy) {
     from jar
@@ -20,10 +20,18 @@ build.dependsOn copyJarToQuPath
 repositories {
     mavenCentral()
     mavenLocal()
+    maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
+    maven { url 'https://plugins.gradle.org/m2/' }
 }
 
 dependencies {
+    implementation group: 'qupath', name: 'qupath-core'
     implementation group: 'qupath', name: 'qupath-gui-fx'
-    implementation group: 'qupath', name: 'qupath-extension-ij'
-    implementation 'net.imagej:ij:1.52k'
+    implementation group: 'qupath', name: 'qupath-extension-processing'
+    implementation group: 'qupath', name: 'qupath-core-processing'
+    implementation 'net.imagej:ij:1.52s'
+    compile group: 'org.controlsfx', name: 'controlsfx', version: '11.0.1'
+    compile group: 'org.slf4j', name: 'log4j-over-slf4j', version: '1.7.30'
+
+
 }

@@ -7,10 +7,10 @@ import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.images.ImageData;
-import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathObject;
+import qupath.lib.objects.PathObjects;
 import qupath.lib.plugins.parameters.ParameterList;
-import qupath.lib.roi.RectangleROI;
+import qupath.lib.roi.ROIs;
 
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
@@ -61,7 +61,7 @@ public class ScriptableMacroRunner {
         this.parameters = new ImageJMacroRunner(QuPathGUI.getInstance()).getParameterList(null);
 
         // Create an annotation of the whole image, in case the user doens't give us one
-        this.pathObject = new PathAnnotationObject(new RectangleROI(0, 0, imageData.getServer().getWidth(), imageData.getServer().getHeight()));
+        this.pathObject = PathObjects.createAnnotationObject( ROIs.createRectangleROI( 0, 0, imageData.getServer().getWidth(), imageData.getServer().getHeight(), null));
 
         // We use this parameter to make sure that we remove the rectangle ROI at the end of the run, because we don't need it
         this.parameters.addBooleanParameter("processWholeImage", null, true);
@@ -109,9 +109,9 @@ public class ScriptableMacroRunner {
     // Text choice for whether we want detections or annotations
     public void setGetOverlayAs(String overlayAs) {
         if (overlayAs.equals("Detections"))
-            this.parameters.addChoiceParameter("getOverlayAs", "Get objects as", "Detections", new String[]{"Detections", "Annotations"});
+            this.parameters.addChoiceParameter("getOverlayAs", "Get objects as", "Detections", Arrays.asList("Detections", "Annotations"));
         if (overlayAs.equals("Annotations"))
-            this.parameters.addChoiceParameter("getOverlayAs", "Get objects as", "Annotations", new String[]{"Detections", "Annotations"});
+            this.parameters.addChoiceParameter("getOverlayAs", "Get objects as", "Annotations", Arrays.asList("Detections", "Annotations"));
     }
 
     // This sets the actual macro code to run
@@ -134,7 +134,7 @@ public class ScriptableMacroRunner {
         List<PathObject> pathObjectsBefore = Arrays.asList(getAllObjects());
 
         if (this.parameters.getBooleanParameterValue("processWholeImage"))
-            viewer.getHierarchy().addPathObject(this.pathObject, true);
+            viewer.getHierarchy().addPathObject( this.pathObject );
 
         ImageJMacroRunner.runMacro( this.parameters, (ImageData<BufferedImage>) this.imageData, this.imageDisplay, this.pathObject, this.macroText );
 

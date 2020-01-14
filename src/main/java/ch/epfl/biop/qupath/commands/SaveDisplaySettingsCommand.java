@@ -5,7 +5,8 @@ import org.slf4j.LoggerFactory;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.commands.interfaces.PathCommand;
-import qupath.lib.gui.helpers.dialogs.DialogHelperFX;
+import qupath.lib.gui.dialogs.DialogHelperFX;
+import qupath.lib.images.servers.ServerTools;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -27,9 +28,9 @@ public class SaveDisplaySettingsCommand implements PathCommand {
     @Override
     public void run() {
 
-        String imageName = qupath.getViewer().getServer().getDisplayedImageName();
-        File projectDirectory = qupath.getProject().getBaseDirectory();
-        DialogHelperFX dial = new DialogHelperFX();
+        String imageName = ServerTools.getDisplayableImageName( qupath.getViewer().getServer() );
+        File projectDirectory = qupath.getProject().getPath().toFile();
+        DialogHelperFX dial = new DialogHelperFX(null);
 
         File toSave = dial.promptToSaveFile("Save Display Settings", projectDirectory, "Settings Based On " + imageName, null, "json");
 

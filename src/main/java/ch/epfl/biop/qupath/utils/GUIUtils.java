@@ -2,15 +2,14 @@ package ch.epfl.biop.qupath.utils;
 
 import ch.epfl.biop.qupath.commands.ApplyDisplaySettingsCommand;
 import ij.ImagePlus;
-import ij.gui.Roi;
 import javafx.scene.paint.Color;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.imagej.gui.IJExtension;
 import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.ImageDisplay;
-import qupath.lib.gui.QuPathGUI;
-import qupath.lib.gui.helpers.ColorToolsFX;
+import qupath.lib.gui.scripting.QPEx;
+import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.PathImage;
@@ -18,7 +17,6 @@ import qupath.lib.images.servers.ImageServer;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.regions.RegionRequest;
-import qupath.lib.scripting.QPEx;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -63,14 +61,14 @@ public class GUIUtils extends QPEx {
     }
 
     public static PathImage<ImagePlus> getPathImage(PathObject pathObject, int downsample, boolean sendPathObjectAsRoi, boolean sendChildObjectsInOverlay, ArrayList<String> channelNames) {
-        ImageData imageData = getCurrentImageData( );
+        ImageData imageData = getCurrentImageData();
         ImageServer server = imageData.getServer( );
         QuPathViewer viewer = getCurrentViewer( );
         PathObjectHierarchy hierarchy = getCurrentHierarchy( );
         ImageDisplay display = null;
         if ( channelNames != null ) {
-            display = new ImageDisplay( imageData, QuPathGUI.getInstance( ).getImageRegionStore( ), true );
-            List<ChannelDisplayInfo> channels = display.getAvailableChannels( );
+            display = new ImageDisplay( imageData );
+            List<ChannelDisplayInfo> channels = display.availableChannels( );
 
             for ( int i = 0; i < channels.size( ); i++ )
                 display.setChannelSelected( channels.get( i ), channelNames.contains( channels.get( i ).getName( ) ) );
@@ -81,7 +79,11 @@ public class GUIUtils extends QPEx {
 
 
         PathImage<ImagePlus> pathImage = null;
-        pathImage = IJExtension.extractROIWithOverlay(server, pathObject, hierarchy, request, sendPathObjectAsRoi, viewer.getOverlayOptions(), display);
+        try {
+            pathImage = IJExtension.extractROIWithOverlay( server, pathObject, hierarchy, request, sendPathObjectAsRoi, viewer.getOverlayOptions() );
+        } catch ( IOException e ) {
+            logger.error( "Could not Extract ROI:\n {}", e.getMessage());
+        }
 
         if (!sendChildObjectsInOverlay) pathImage.getImage().setOverlay(null);
         return pathImage;
@@ -140,7 +142,7 @@ public class GUIUtils extends QPEx {
     public static void setActiveChannels(ArrayList<Integer> theChannels) {
         QuPathViewer viewer = getCurrentViewer();
         ImageDisplay display = getCurrentImageDisplay();
-        List<ChannelDisplayInfo> channels = display.getAvailableChannels();
+        List<ChannelDisplayInfo> channels = display.availableChannels();
 
         for (int i = 0; i < channels.size(); i++)
             display.setChannelSelected(channels.get(i), theChannels.contains(i + 1));
@@ -158,7 +160,7 @@ public class GUIUtils extends QPEx {
         QuPathViewer viewer = getCurrentViewer();
         ImageDisplay display = getCurrentImageDisplay();
 
-        List<ChannelDisplayInfo> channels = display.getAvailableChannels();
+        List<ChannelDisplayInfo> channels = display.availableChannels();
 
         for (int i = 0; i < channels.size(); i++)
             display.setChannelSelected(channels.get(i), channelNames.contains(channels.get(i).getName()));
@@ -203,7 +205,7 @@ public class GUIUtils extends QPEx {
     public static void setChannelMinMax(int channelID, int min, int max) {
         QuPathViewer viewer = getCurrentViewer();
         ImageDisplay display = viewer.getImageDisplay();
-        List<ChannelDisplayInfo> channels = display.getAvailableChannels();
+        List<ChannelDisplayInfo> channels = display.availableChannels();
         setChannelMinMax(channels.get(channelID - 1).getName(), min, max);
     }
 
@@ -220,7 +222,7 @@ public class GUIUtils extends QPEx {
 
         ChannelDisplayInfo selectedChannel = getSelectedChannelInfo(channelName);
         if (selectedChannel instanceof ChannelDisplayInfo.AbstractSingleChannelInfo) {
-            ChannelDisplayInfo.MultiChannelInfo multiInfo = (ChannelDisplayInfo.MultiChannelInfo) selectedChannel;
+            ChannelDisplayInfo.DirectServerChannelInfo multiInfo = (ChannelDisplayInfo.DirectServerChannelInfo) selectedChannel;
 
             Integer channelRGB = ColorToolsFX.getRGB(color);
             multiInfo.setLUTColor(channelRGB);
@@ -320,7 +322,7 @@ public class GUIUtils extends QPEx {
     private static ChannelDisplayInfo getSelectedChannelInfo(int channel) {
         ImageDisplay display = getCurrentImageDisplay();
 
-        List<ChannelDisplayInfo> channels = display.getAvailableChannels();
+        List<ChannelDisplayInfo> channels = display.availableChannels();
         ChannelDisplayInfo selectedChannel = channels.get(channel - 1);
         return selectedChannel;
     }
@@ -335,7 +337,7 @@ public class GUIUtils extends QPEx {
     private static ChannelDisplayInfo getSelectedChannelInfo(String channelName) {
         ImageDisplay display = getCurrentImageDisplay();
 
-        List<ChannelDisplayInfo> channels = display.getAvailableChannels();
+        List<ChannelDisplayInfo> channels = display.availableChannels();
         ChannelDisplayInfo selectedChannel = channels.stream().filter(ch -> ch.getName().equals(channelName)).findFirst().get();
         return selectedChannel;
     }
@@ -355,7 +357,7 @@ public class GUIUtils extends QPEx {
         if (isNotBatch()) {
             display = viewer.getImageDisplay();
         } else {
-            display = new ImageDisplay(imageData, getQuPath().getImageRegionStore(), false);
+            display = new ImageDisplay( imageData );
         }
         return display;
     }

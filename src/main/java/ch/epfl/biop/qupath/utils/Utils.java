@@ -5,20 +5,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.models.ObservableMeasurementTableData;
+import qupath.lib.gui.scripting.QPEx;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.scripting.QP;
-import qupath.lib.scripting.QPEx;
 
 import java.io.*;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -107,7 +102,7 @@ public class Utils extends QP {
     }
 
     static public void sendResultsToFile(ArrayList<String> resultColumns, ArrayList<PathObject> objects) {
-        File resultsFolder = new File(QuPathGUI.getInstance().getProject().getBaseDirectory(), "results");
+        File resultsFolder = new File(QuPathGUI.getInstance().getProject().getPath().toFile(), "results");
         File resultsFile = new File(resultsFolder, "results.txt");
         if (!resultsFolder.exists()) {
             resultsFolder.mkdirs();
@@ -152,7 +147,7 @@ public class Utils extends QP {
      * @return the pixel size in um/px
      */
     public static double getPixelSize() {
-        return getCurrentImageData( ).getServer( ).getAveragedPixelSizeMicrons( );
+        return getCurrentImageData( ).getServer( ).getPixelCalibration( ).getAveragedPixelSizeMicrons();
     }
 
     /**
