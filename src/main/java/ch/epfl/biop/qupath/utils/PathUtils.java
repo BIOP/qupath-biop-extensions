@@ -29,10 +29,7 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.measurements.MeasurementList;
 import qupath.lib.measurements.MeasurementListFactory;
-import qupath.lib.objects.PathAnnotationObject;
-import qupath.lib.objects.PathCellObject;
-import qupath.lib.objects.PathDetectionObject;
-import qupath.lib.objects.PathObject;
+import qupath.lib.objects.*;
 import qupath.lib.roi.*;
 import qupath.lib.roi.experimental.ShapeSimplifier;
 import qupath.lib.roi.interfaces.PathArea;
@@ -173,10 +170,11 @@ public class PathUtils extends QP {
         int t = parent.getROI( ).getT( );
 
         ImagePlus image = GUIUtils.getImagePlus( parent, 1, false, false );
+        Calibration cal = image.getCalibration( );
 
-        ImageProcessor ip = image.getProcessor( );
+        ImageProcessor ip = image.duplicate().getProcessor( );
 
-        int thickness_px = (int) Math.round( image.getCalibration( ).getRawX( thickness_um ) );
+        int thickness_px = (int) Math.round( thickness_um / cal.pixelWidth );
 
         // We need to create the channels for the measurements
         ColorDeconvolutionStains stains = getCurrentImageData( ).getColorDeconvolutionStains( );
@@ -210,7 +208,6 @@ public class PathUtils extends QP {
 
         ImagePlus labels = IJ.createImage( "Mask", image.getWidth( ), image.getHeight( ), 1, 16 );
 
-        Calibration cal = new Calibration( );
 
         labels.setCalibration( cal );
         ImageProcessor ipLabels = labels.getProcessor( );
@@ -219,9 +216,7 @@ public class PathUtils extends QP {
 
         int id = 1;
         for ( PathObject object : objects ) {
-
-            Shape shape = PathROIToolsAwt.getShape( object.getROI( ) );
-            Roi r = new ShapeRoi( shape );
+            Roi r = ROIConverterIJ.convertToIJRoi( object.getROI( ) , cal, 1 );
             roisNuclei.add( r );
             ipLabels.setValue( id );
             ipLabels.fill( r );
@@ -229,6 +224,7 @@ public class PathUtils extends QP {
         }
 
         ImageProcessor bp = ipLabels.duplicate( );
+
         bp.setThreshold( 1, 65535, ImageProcessor.NO_LUT_UPDATE );
         bp = bp.createMask( );
 
@@ -261,7 +257,7 @@ public class PathUtils extends QP {
                 continue;
             cellRoi = new PolygonRoi( cellRoi.getInterpolatedPolygon( Math.min( 2.5, cellRoi.getNCoordinates( ) * 0.1 ), false ), Roi.POLYGON );
 
-            PolygonROI pathROI = ROIConverterIJ.convertToPolygonROI( cellRoi, labels.getCalibration( ), 1, c, z, t );
+            PolygonROI pathROI = ROIConverterIJ.convertToPolygonROI( cellRoi, cal, 1, c, z, t );
             pathROI = ShapeSimplifier.simplifyPolygon( pathROI, 1 / 4.0 );
 
             // Create a new shared measurement list for the nuclei
@@ -304,7 +300,7 @@ public class PathUtils extends QP {
                 statsMapCytoplasm.put( key, statsList );
             }
 
-            ObjectMeasurements.addShapeStatistics( measurementList, cellRoi, image.getProcessor(), image.getCalibration( ), "Cell: " );
+            ObjectMeasurements.addShapeStatistics( measurementList, cellRoi, image.getProcessor(), cal, "Cell: " );
 
             // Add cell measurements
             for ( String key : channelsCell.keySet( ) ) {
