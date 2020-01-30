@@ -82,8 +82,8 @@ public class Utils extends QP {
         // Add value for each selected object
         for (PathObject pathObject : objects) {
             results.incrementCounter( );
-            results.addValue( "Image Name", imageName );
-            results.addValue( "Subimage Name", subImageName );
+            results.addValue( "Image_Name", imageName );
+            results.addValue( "Subimage_Name", subImageName );
 
             // Check if image has associated metadata and add it as columns
             if ( QPEx.getProjectEntry( ).getMetadataKeys( ).size( ) > 0 ) {
@@ -95,11 +95,12 @@ public class Utils extends QP {
 
             // Then we can add the results the user requested
             for ( String col : resultColumns ) {
+                String cleancol = col.replace( Utils.um, "um" ).replace( " ", "_" );
                 String value = ob.getStringValue( pathObject, col );
                 if ( ob.isNumericMeasurement( col ) )
-                    results.addValue( col.replace( Utils.um, "um" ), ob.getNumericValue( pathObject, col ) );
+                    results.addValue( cleancol, ob.getNumericValue( pathObject, col ) );
                 if ( ob.isStringMeasurement( col ) )
-                    results.addValue( col.replace( Utils.um, "um" ), ob.getStringValue( pathObject, col ) );
+                    results.addValue( cleancol, ob.getStringValue( pathObject, col ) );
             }
         }
         results.save( resultsFile.getAbsolutePath() );
