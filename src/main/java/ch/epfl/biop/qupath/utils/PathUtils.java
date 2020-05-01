@@ -1,5 +1,6 @@
 package ch.epfl.biop.qupath.utils;
 
+import ch.epfl.biop.qupath.utils.internal.ObjectMeasurements;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.PolygonRoi;
@@ -12,7 +13,6 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import qupath.imagej.detect.cells.ObjectMeasurements;
 import qupath.imagej.processing.RoiLabeling;
 import qupath.imagej.processing.Watershed;
 import qupath.imagej.tools.IJTools;
@@ -27,7 +27,9 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.measurements.MeasurementList;
 import qupath.lib.measurements.MeasurementListFactory;
-import qupath.lib.objects.*;
+import qupath.lib.objects.PathDetectionObject;
+import qupath.lib.objects.PathObject;
+import qupath.lib.objects.PathObjects;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.roi.*;
 import qupath.lib.roi.interfaces.ROI;
@@ -45,8 +47,8 @@ public class PathUtils extends QP {
     private final static Logger logger = LoggerFactory.getLogger( PathUtils.class );
 
     /**
-     * returns a rectangle with teh whole dataset as an annotation.
-     * It does not add it to the Hierarchy
+     * returns a rectangle with teh whole dataset as an annotation. It does not add it to the Hierarchy
+     *
      * @return an Annotation Object with the whole image
      */
     public static PathObject getFullImageAnnotation( ) {
@@ -78,7 +80,7 @@ public class PathUtils extends QP {
      */
     public static double getArea( PathObject object ) {
         ROI roi = object.getROI( );
-        return roi.getArea();
+        return roi.getArea( );
     }
 
     /**
@@ -98,7 +100,7 @@ public class PathUtils extends QP {
         ROI splitObject = RoiTools.combineROIs( pathObject.getROI( ), area, RoiTools.CombineOp.SUBTRACT );
 
         // This method, by Pete, separates the areas into separate polygons
-        PolygonROI[][] split = RoiTools.splitAreaToPolygons( RoiTools.getArea( splitObject ), area.getC(), area.getZ(), area.getT() );
+        PolygonROI[][] split = RoiTools.splitAreaToPolygons( RoiTools.getArea( splitObject ), area.getC( ), area.getZ( ), area.getT( ) );
 
 
         List<PathObject> objects = new ArrayList<>( split[ 1 ].length );
@@ -159,7 +161,7 @@ public class PathUtils extends QP {
 
     public static List<PathObject> createCellObjects( PathObject parent, List<PathObject> objects, double thickness_um ) {
 
-        ImagePlane plane = parent.getROI().getImagePlane();
+        ImagePlane plane = parent.getROI( ).getImagePlane( );
 
         int c = parent.getROI( ).getC( );
         int z = parent.getROI( ).getZ( );
@@ -297,7 +299,7 @@ public class PathUtils extends QP {
                 statsMapCytoplasm.put( key, statsList );
             }
 
-            ObjectMeasurements.addShapeStatistics( measurementList, cellRoi, image.getProcessor(), image.getCalibration( ), "Cell: " );
+            ObjectMeasurements.addShapeStatistics( measurementList, cellRoi, image.getProcessor( ), image.getCalibration( ), "Cell: " );
 
             // Add cell measurements
             for ( String key : channelsCell.keySet( ) ) {
@@ -324,10 +326,9 @@ public class PathUtils extends QP {
             }
 
             // Add nucleus area ratio, if available
-            double nucleusArea =  objects.get( i ).getROI( ).getArea( );
+            double nucleusArea = objects.get( i ).getROI( ).getArea( );
             double cellArea = pathROI.getArea( );
             measurementList.addMeasurement( "Nucleus/Cell area ratio", Math.min( nucleusArea / cellArea, 1.0 ) );
-
 
 
             PathObject pathObject = PathObjects.createCellObject( pathROI, objects.get( i ).getROI( ), null, measurementList );
@@ -336,8 +337,8 @@ public class PathUtils extends QP {
         }
 
         // Close the measurement lists
-        for (PathObject pathObject : pathObjects)
-            pathObject.getMeasurementList().close();
+        for ( PathObject pathObject : pathObjects )
+            pathObject.getMeasurementList( ).close( );
 
 
         return pathObjects;
@@ -409,12 +410,12 @@ public class PathUtils extends QP {
         ROI shapeNew = null;
         List<PathObject> children = new ArrayList<>( );
         for ( PathObject child : pathobjects ) {
-                if ( shapeNew == null )
-                    shapeNew = child.getROI( );//.duplicate();
-                else
-                    shapeNew = RoiTools.combineROIs( shapeNew, child.getROI( ), RoiTools.CombineOp.ADD );
-                children.add( child );
-            }
+            if ( shapeNew == null )
+                shapeNew = child.getROI( );//.duplicate();
+            else
+                shapeNew = RoiTools.combineROIs( shapeNew, child.getROI( ), RoiTools.CombineOp.ADD );
+            children.add( child );
+        }
         // Check if we actually merged anything
         if ( children.isEmpty( ) )
             return null;
@@ -449,4 +450,3 @@ public class PathUtils extends QP {
 
     }
 }
-
