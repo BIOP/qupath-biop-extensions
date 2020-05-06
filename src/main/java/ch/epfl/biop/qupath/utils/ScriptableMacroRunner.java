@@ -1,8 +1,8 @@
 package ch.epfl.biop.qupath.utils;
 
+import ch.epfl.biop.qupath.utils.internal.ImageJMacroRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import qupath.imagej.plugins.ImageJMacroRunner;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.viewer.QuPathViewer;
