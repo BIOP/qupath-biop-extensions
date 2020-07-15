@@ -3,7 +3,7 @@ plugins {
 }
 
 group 'ch.epfl.biop.qupath'
-version '2.0.0'
+version '2.0.1'
 description = 'qupath-biop-extension'
 
 
@@ -11,7 +11,7 @@ sourceCompatibility = 11
 
 task copyJarToQuPath (type: Copy) {
     from jar
-    into "C:\\QuPath\\extensions"
+    into "C:\\QuPath Common Data\\extensions"
 }
 
 

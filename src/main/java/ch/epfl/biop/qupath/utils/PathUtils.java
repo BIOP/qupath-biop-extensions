@@ -233,8 +233,9 @@ public class PathUtils extends QP {
         // Create cell ROIs
         ImageProcessor ipLabelsCells = ipLabels.duplicate( );
         Watershed.doWatershed( fpEDM, ipLabelsCells, -thickness_px, false );
-
+        new ImagePlus("Cell Labels", ipLabelsCells).show();
         PolygonRoi[] roisCells = RoiLabeling.labelsToFilledROIs( ipLabelsCells, objects.size( ) );
+        logger.info("Number of Cell ROIs: {}", roisCells.length );
 
         // Measure nuclei for all required channels
         Map<String, List<RunningStatistics>> statsMap = new LinkedHashMap<>( );

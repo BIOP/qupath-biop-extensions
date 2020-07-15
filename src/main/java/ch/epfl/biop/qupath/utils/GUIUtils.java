@@ -4,6 +4,7 @@ import ij.CompositeImage;
 import ij.ImagePlus;
 import ij.gui.Overlay;
 import ij.gui.Roi;
+import javafx.collections.ObservableList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.imagej.gui.IJExtension;
@@ -150,6 +151,20 @@ public class GUIUtils extends QPEx {
             return null;
         }
     }
+
+    public static ImageServer getSelectedChannelsServer( ImageServer currentServer, List<String> channelNames ){
+
+        QuPathViewer viewer = getCurrentViewer( );
+        ObservableList<ChannelDisplayInfo> channels = viewer.getImageDisplay( ).availableChannels( );
+
+        // Select the channels
+        List <ChannelDisplayInfo> selectedChannels = new ArrayList<>( channelNames.size( ) );
+        for ( String chName : channelNames) {
+            selectedChannels.addAll( channels.stream( ).filter( c -> c.getName( ).contains( chName ) ).collect( Collectors.toList()) );
+        }
+            return ChannelDisplayTransformServer.createColorTransformServer(currentServer, selectedChannels);
+    }
+
     /**
      * Gets the current image display or creates one in the case we need it when we work in batch mode
      *
@@ -169,6 +184,8 @@ public class GUIUtils extends QPEx {
         }
         return display;
     }
+
+
 
     /**
      * Helper that checks if we are in batch mode or not
