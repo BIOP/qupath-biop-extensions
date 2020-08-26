@@ -3,13 +3,17 @@ package ch.epfl.biop.qupath.utils;
 import ij.measure.ResultsTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import qupath.lib.display.ChannelDisplayInfo;
+import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.measure.ObservableMeasurementTableData;
 import qupath.lib.gui.scripting.QPEx;
+import qupath.lib.images.ImageData;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.scripting.QP;
 
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -62,8 +66,8 @@ public class Utils extends QP {
         // This line creates all the measurements
         ob.setImageData( getCurrentImageData( ), objects );
 
-        // Get the image Name, as we want to append this to the table
-        String rawImageName = new File( getCurrentImageData( ).getServer( ).getPath( ) ).getName( );
+
+        String imageName = getCurrentImageData( ).getServer( ).get
         String subImageName = "";
         String imageName = rawImageName;
         // check if it has a subimage
@@ -148,6 +152,13 @@ public class Utils extends QP {
      */
     public static double getPixelSize( ) {
         return getCurrentImageData( ).getServer( ).getPixelCalibration( ).getAveragedPixelSizeMicrons( );
+    }
+
+    public static List<ChannelDisplayInfo> getAllAvailableChannels() {
+        ImageData<BufferedImage> imageData = getCurrentImageData( );
+        List<ChannelDisplayInfo> channels = new ImageDisplay( imageData ).availableChannels( );
+
+        return channels;
     }
 
 }

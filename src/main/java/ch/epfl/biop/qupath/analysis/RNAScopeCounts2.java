@@ -9,12 +9,12 @@ import org.bytedeco.opencv.opencv_core.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.color.ColorDeconvolutionStains;
-import qupath.lib.common.ColorTools;
+import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.geom.Point2;
+import qupath.lib.gui.images.servers.ChannelDisplayTransformServer;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.servers.TransformedServerBuilder;
 import qupath.lib.measurements.MeasurementList;
 import qupath.lib.objects.*;
 import qupath.lib.objects.classes.PathClass;
@@ -25,7 +25,6 @@ import qupath.lib.plugins.parameters.ParameterList;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.regions.RegionRequest;
 import qupath.lib.roi.ROIs;
-import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.interfaces.ROI;
 import qupath.opencv.ops.ImageOps;
 import qupath.opencv.tools.OpenCVTools;
@@ -119,15 +118,16 @@ public class RNAScopeCounts2 extends AbstractInteractivePlugin<BufferedImage> {
         // Check if we need to invert the image or not
         String detection_type = (String) params.getChoiceParameterValue( "detection_type" );
         String channel = (String) params.getChoiceParameterValue( "channel_to_process" );
-        double threshold = params.getDoubleParameterValue( "threshold" );
-
-
-        // Get the image server based on what the user selected, depending if it is fluorescence or brightfield
-        ImageServer<BufferedImage> server = new TransformedServerBuilder( imageData.getServer( ) )
-                .extractChannels( channel )
-                .build( );
+        double threshold = params.getDoubleParameterValue( "threshold" ); // Remove this somehow
 
         int downsample = 1;
+
+        List<ChannelDisplayInfo> allChannels = new ImageDisplay( imageData ).availableChannels( );
+
+        List<ChannelDisplayInfo> rnaScopeChannel = allChannels.stream( ).filter( c -> c.getName( ).contains( channel ) ).limit( 1 ).collect( Collectors.toList( ) );
+
+        ImageServer<BufferedImage> server = ChannelDisplayTransformServer.createColorTransformServer(imageData.getServer( ), rnaScopeChannel);
+
         RegionRequest cell_request = RegionRequest.createInstance( server.getPath( ), downsample, pathObject.getROI( ) );
 
         BufferedImage img = null;
@@ -144,72 +144,55 @@ public class RNAScopeCounts2 extends AbstractInteractivePlugin<BufferedImage> {
         double scaleX = cell_request.getWidth( ) / (double) img.getWidth( );
         double scaleY = cell_request.getHeight( ) / (double) img.getHeight( );
 
-
         // Convert to OpenCV Mat
         int width = img.getWidth( );
         int height = img.getHeight( );
-        Mat mat = OpenCVTools.imageToMat( img );
-
+        Mat mat_raw = OpenCVTools.imageToMat( img );
 
         // Invert if looking for dark objects
-        if ( detection_type.equals( DARK_DETECTIONS ) ) opencv_core.bitwise_not( mat, mat );
+        if ( detection_type.equals( DARK_DETECTIONS ) ) opencv_core.bitwise_not( mat_raw, mat_raw );
 
-        // Flatten intensities
-        mat = ImageOps.Core.sqrt( ).apply( mat );
+        // Remove noise
+        //mat_raw = ImageOps.Filters.median( 1 ).apply( mat_raw );
+        //mat_raw = blur( mat_raw, 1.0);
+
+        // SQRT to kill contribution of overly bright spots
+        mat_raw = ImageOps.Core.sqrt( ).apply( mat_raw );
 
         // Normalize input image
         // This is not a minMax normalization as I understand it.
-        // This method takes the min and max values of the image
-
+        // This method takes the min and max values of the image to put them as the entered range
         //mat = ImageOps.Normalize.minMax( minMax[ 0 ], minMax[ 1 ] ).apply( mat );
 
+        // Apply Normalization newval = ( oldval - min ) / (max-min)
+        Mat mat_norm = ImageOps.Core.subtract( minMax[ 0 ] ).apply( mat_raw );
+        mat_norm = ImageOps.Core.divide( minMax[ 1 ] - minMax[ 0 ] ).apply( mat_norm );
 
-        // Apply Normalization newval = ( oldval - min ) / (max-min_
-        mat = ImageOps.Core.subtract( minMax[ 0 ] ).apply( mat );
-        mat = ImageOps.Core.divide( minMax[ 1 ] - minMax[ 0 ] ).apply( mat );
+        // Perform a background subtraction. We expect sub-diffracted spots, so remove large variations (~15px)
+        Mat bg = blur( mat_norm, 25.0 );
+        subtract( mat_norm, bg, mat_norm );
 
+        // DoG computation for small spots
+        double gaussian_sigma1 = 2.0;
+        Mat mat_blur1 = blur( mat_norm, gaussian_sigma1 );
 
+        double gaussian_sigma2 = gaussian_sigma1 * Math.sqrt( 2.0 );
+        Mat mat_blur2 = blur( mat_norm, gaussian_sigma2);
 
-        // Perform a background subtraction. We expect sub-diffracted spots, so remove large variations (~10px)
-        int bg_radius = 10;
-        Mat matBG = new Mat( );
-        int size = (int) Math.round( bg_radius ) * 2 + 1;
-        Mat kernel = opencv_imgproc.getStructuringElement( opencv_imgproc.MORPH_ELLIPSE, new Size( size, size ) );
-        opencv_imgproc.morphologyEx( mat, matBG, opencv_imgproc.MORPH_OPEN, kernel );
-        subtract( mat, matBG, mat );
+        Mat mat_dog = new Mat( );
+        subtract( mat_blur1, mat_blur2, mat_dog );
 
-        // DoG computation
-        double gaussian_sigma = 2.0; //px
-        int gaussian_width = (int) ( Math.ceil( gaussian_sigma * 3 ) * 2 + 1 );
+        // Use ImageJ Max Finder with very low prominence
+        double prominence = 0.04 + threshold;
 
-        Mat mat_blur1 = new Mat( );
-        opencv_imgproc.GaussianBlur( mat, mat_blur1, new Size( gaussian_width, gaussian_width ), gaussian_sigma );
-
-        double gaussian_sigma2 = gaussian_sigma * Math.sqrt( 2.0 );
-        int gaussianWidth2 = (int) ( Math.ceil( gaussian_sigma2 * 3 ) * 2 + 1 );
-        Mat mat_blur2 = new Mat( );
-        // Apply filter to the original
-        opencv_imgproc.GaussianBlur( mat, mat_blur2, new Size( gaussianWidth2, gaussianWidth2 ), gaussian_sigma2 );
-
-        subtract( mat_blur1, mat_blur2, mat );
-
-        // Threshold. This value should be fixed after normalization, to find only objects that are well defined and strong
-        // Mat matThresh = ImageOps.Threshold.threshold( threshold ).apply( mat );
-        // matThresh.convertTo( matThresh, CV_8UC1 );
-
-        // Use ImageJ Max Finder
         MaximumFinder mf = new MaximumFinder();
-        ImagePlus peaks = OpenCVTools.matToImagePlus( "Peaks", mat );
-        Polygon maxima = mf.getMaxima( peaks.getProcessor( ), threshold, true );
+        ImagePlus peaks = OpenCVTools.matToImagePlus( "Peaks", mat_dog );
+        Polygon maxima = mf.getMaxima( peaks.getProcessor( ), prominence, true );
 
+        // Now assign each point to the cell and to the nucleus
         ArrayList<qupath.lib.geom.Point2> points = new ArrayList<>( );
 
-        Shape shape_cell = cell_roi != null && cell_roi.isArea( ) ? RoiTools.getShape( cell_roi ) : null;
-        Integer color = ColorTools.makeRGB( 0, 255, 0 );
-
         ROI area_cell = cell_roi != null && cell_roi.isArea( ) ? cell_roi : null;
-
-        Shape shape_nucleus = nucleus_roi != null && nucleus_roi.isArea( ) ? RoiTools.getShape( nucleus_roi ) : null;
         ROI area_nucleus = nucleus_roi != null && nucleus_roi.isArea( ) ? nucleus_roi : null;
 
 
@@ -219,9 +202,6 @@ public class RNAScopeCounts2 extends AbstractInteractivePlugin<BufferedImage> {
         for ( int c = 0; c < maxima.npoints; c++ ) {
             ROI tempROI = null;
             Point2 p = new Point2( ( maxima.xpoints[c] + 0.5 ) * scaleX + x, ( maxima.ypoints[c] + 0.5 ) * scaleY + y );
-
-            if ( shape_cell != null && !shape_cell.contains( p.getX( ), p.getY( ) ) )
-                continue;
 
             // Check we're inside
             if ( area_cell != null && !area_cell.contains( p.getX( ), p.getY( ) ) )
@@ -340,15 +320,23 @@ public class RNAScopeCounts2 extends AbstractInteractivePlugin<BufferedImage> {
         measurementList.putMeasurement( "RNAScope: " + channel + ": Nucleus Num spots", nucleus_counts );
 
         // Release matrices
-        //matMax.release( );
-        //matMaxima.release( );
-        mat.release( );
+        mat_dog.release( );
+        mat_norm.release();
+        mat_raw.release();
         mat_blur1.release( );
         mat_blur2.release( );
-        //matThresh.release( );
 
         pathObject.addPathObjects( rnaScopeObjects );
         return true;
+    }
+
+    private static Mat blur( Mat mat, double sigma ) {
+        Mat result = new Mat();
+        int gaussian_width = (int) ( Math.ceil( sigma * 3 ) * 2 + 1 );
+
+        opencv_imgproc.GaussianBlur( mat, result, new Size( gaussian_width, gaussian_width ), sigma );
+
+        return result;
     }
 
     @Override
@@ -377,7 +365,7 @@ public class RNAScopeCounts2 extends AbstractInteractivePlugin<BufferedImage> {
                 .addTitleParameter( "RNA Spots Detection" )
                 .addChoiceParameter( "channel_to_process", "Channel To Process", defaultChannel, channels )
                 .addChoiceParameter( "detection_type", "Type of Detection", detection_type, DETECTIONS )
-                .addDoubleParameter( "threshold", "Threshold Value", 2.0 );
+                .addDoubleParameter( "threshold", "Threshold Offset", 0.0 );
 
         return params;
     }
@@ -448,43 +436,50 @@ public class RNAScopeCounts2 extends AbstractInteractivePlugin<BufferedImage> {
 
         @Override
         public void run( ) {
-            // Check if we need to invert the image or not
+
             String detection_type = (String) params.getChoiceParameterValue( "detection_type" );
             String channel = (String) params.getChoiceParameterValue( "channel_to_process" );
 
-            int downsample = (int) Math.round( Math.max( 1.0, Math.max( imageData.getServer( ).getWidth( ), imageData.getServer( ).getHeight( ) ) / 1024.0 ) );
+            int downsample = (int) Math.round( Math.max( 1.0, Math.max( imageData.getServer( ).getWidth( ), imageData.getServer( ).getHeight( ) ) / 2048.0 ) );
 
+            List<ChannelDisplayInfo> allChannels = new ImageDisplay( imageData ).availableChannels( );
 
             logger.info( "Extracting Channel {} with downsample {} for normalization before proceeding", channel, downsample );
+            List<ChannelDisplayInfo> rnaScopeChannel = allChannels.stream( ).filter( c -> c.getName( ).contains( channel ) ).limit( 1 ).collect( Collectors.toList( ) );
 
-            ImageServer<BufferedImage> server = new TransformedServerBuilder( imageData.getServer( ) )
-                    .extractChannels( channel )
-                    .build( );
+            logger.info( "All Available Channels: {}", allChannels);
+            logger.info( "Channel to process {}, channel {}", channel, rnaScopeChannel );
+
+            ImageServer<BufferedImage> server = ChannelDisplayTransformServer.createColorTransformServer(imageData.getServer( ), rnaScopeChannel);
 
             RegionRequest global_request = RegionRequest.createInstance( server.getPath( ), downsample, parentObject.getROI( ) );
 
             BufferedImage img = null;
+
             try {
                 img = server.readBufferedImage( global_request );
 
-
                 // Convert to OpenCV Mat
-                Mat mat = OpenCVTools.imageToMat( img );
+                Mat raw = OpenCVTools.imageToMat( img );
 
                 // Invert if looking for dark objects
                 if ( detection_type.equals( DARK_DETECTIONS ) ) {
                     logger.info( "    Image will be inverted during processing to detect dark spots" );
-                    opencv_core.bitwise_not( mat, mat );
+                    opencv_core.bitwise_not( raw, raw );
                 }
 
-                // Blur slightly
-                mat = ImageOps.Filters.gaussianBlur( 2.0 ).apply( mat );
+                // Remove noise
+                //ImageOps.Filters.median( 2 ).apply( raw );
+               // raw = blur( raw, 1.0);
 
                 // SQRT to kill contribution of overly bright spots
-                mat = ImageOps.Core.sqrt( ).apply( mat );
+                raw = ImageOps.Core.sqrt( ).apply( raw );
 
-                double[] minmaxVals = percentiles( mat, 1.0, 98.0 );
+                // Compute quantiles for normalization
+                double[] minmaxVals = percentiles( raw, 5.0, 99.99 );
                 logger.info( "    Min, Max valued for normalization of channel {}: ({})", channel, minmaxVals );
+
+                // Process all cells in the parent object
                 if ( parentObject instanceof PathCellObject )
                     processObject( parentObject, params, imageData, minmaxVals );
                 else {
@@ -508,5 +503,6 @@ public class RNAScopeCounts2 extends AbstractInteractivePlugin<BufferedImage> {
             // TODO: Give a better toString()
             return "RNAScope detection";
         }
+
     }
 }
