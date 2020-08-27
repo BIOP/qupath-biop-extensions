@@ -67,7 +67,7 @@ public class Utils extends QP {
         ob.setImageData( getCurrentImageData( ), objects );
 
 
-        String imageName = getCurrentImageData( ).getServer( ).get
+        String rawImageName = getCurrentImageData( ).getServer( ).getPath();
         String subImageName = "";
         String imageName = rawImageName;
         // check if it has a subimage

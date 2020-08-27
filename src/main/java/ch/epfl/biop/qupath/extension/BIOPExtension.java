@@ -32,12 +32,12 @@ public class BIOPExtension implements QuPathExtension {
     }
 
     public static class ABBACommands {
-        @ActionMenu("BIOP>ABBA>")
+        @ActionMenu("BIOP>ABBA>Load ABBA Rois into Project")
         @ActionDescription("Allen Brain Beautiful Aligner (ABBA) commands")
         public final Action actionABBA;
 
         private ABBACommands(QuPathGUI qupath) {
-            actionABBA = qupath.createImageDataAction(imageData -> new LoadABBARoisToQuPathCommand( qupath ).run());
+            actionABBA = qupath.createProjectAction( project -> new LoadABBARoisToQuPathCommand( project ).run());
         }
     }
 
@@ -57,6 +57,7 @@ public class BIOPExtension implements QuPathExtension {
     public void installExtension( QuPathGUI qupath ) {
         logger.debug("Installing extension");
         qupath.installActions(getAnnotatedActions(new RNAScopeCommands(qupath)));
+        qupath.installActions(getAnnotatedActions(new ABBACommands(qupath)));
         qupath.installActions(getAnnotatedActions(new DisplayCommands(qupath)));
     }
 
