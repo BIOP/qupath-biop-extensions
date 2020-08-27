@@ -1,5 +1,6 @@
 package ch.epfl.biop.qupath.extension;
 
+import ch.epfl.biop.qupath.abba.commands.LoadABBARoisToQuPathCommand;
 import ch.epfl.biop.qupath.analysis.RNAScopeCounts2;
 import ch.epfl.biop.qupath.commands.ApplyDisplaySettingsCommand;
 import org.controlsfx.control.action.Action;
@@ -27,6 +28,16 @@ public class BIOPExtension implements QuPathExtension {
 
         private RNAScopeCommands(QuPathGUI qupath) {
             actionRNAScope = qupath.createPluginAction("Perform RNA Scope Analysis (Experimental)", RNAScopeCounts2.class, null);
+        }
+    }
+
+    public static class ABBACommands {
+        @ActionMenu("BIOP>ABBA>")
+        @ActionDescription("Allen Brain Beautiful Aligner (ABBA) commands")
+        public final Action actionABBA;
+
+        private ABBACommands(QuPathGUI qupath) {
+            actionABBA = qupath.createImageDataAction(imageData -> new LoadABBARoisToQuPathCommand( qupath ).run());
         }
     }
 
