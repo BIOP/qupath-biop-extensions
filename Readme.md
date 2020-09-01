@@ -18,7 +18,7 @@ We have implemented 3 commands to work on an image's brightness & contrast setti
  
  # Installation
 
- You can download the latest release [jar file](http://) and drag and drop it into QuPath.
+ You can download the latest release [jar file](https://github.com/BIOP/qupath-biop-extensions/releases) and drag and drop it into QuPath.
  
  # Downloading the project and working on it
  
