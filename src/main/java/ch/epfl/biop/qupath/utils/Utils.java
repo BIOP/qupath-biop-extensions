@@ -11,6 +11,8 @@ import qupath.lib.gui.scripting.QPEx;
 import qupath.lib.images.ImageData;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
+import qupath.lib.projects.ProjectImageEntry;
+import qupath.lib.projects.Projects;
 import qupath.lib.scripting.QP;
 
 import java.awt.image.BufferedImage;
@@ -66,28 +68,20 @@ public class Utils extends QP {
         // This line creates all the measurements
         ob.setImageData( getCurrentImageData( ), objects );
 
+        ProjectImageEntry<BufferedImage> entry = getProjectEntry();
 
-        String imageName = getCurrentImageData( ).getServer( ).get
-        String subImageName = "";
-        String imageName = rawImageName;
-        // check if it has a subimage
-        if ( rawImageName.contains( "::" ) ) {
-            String[] splitName = rawImageName.split( "::" );
-            imageName = splitName[ 0 ];
-            subImageName = splitName[ 1 ];
+        String rawImageName = entry.getImageName();
 
-        }
         // Add value for each selected object
         for ( PathObject pathObject : objects ) {
             results.incrementCounter( );
-            results.addValue( "Image Name", imageName );
-            results.addValue( "Subimage Name", subImageName );
+            results.addValue( "Image Name", rawImageName );
 
             // Check if image has associated metadata and add it as columns
-            if ( QPEx.getProjectEntry( ).getMetadataKeys( ).size( ) > 0 ) {
-                Collection<String> keys = QPEx.getProjectEntry( ).getMetadataKeys( );
+            if ( entry.getMetadataKeys( ).size( ) > 0 ) {
+                Collection<String> keys = entry.getMetadataKeys( );
                 for ( String key : keys ) {
-                    results.addValue( "Metadata_" + key, QPEx.getProjectEntry( ).getMetadataValue( key ) );
+                    results.addValue( "Metadata_" + key, entry.getMetadataValue( key ) );
                 }
             }
 
@@ -105,7 +99,7 @@ public class Utils extends QP {
     }
 
     static public void sendResultsToFile( ArrayList<String> resultColumns, ArrayList<PathObject> objects ) {
-        File resultsFolder = new File( QuPathGUI.getInstance( ).getProject( ).getPath( ).toFile( ), "results" );
+        File resultsFolder = new File(Projects.getBaseDirectory(getProject()), "results" );
         File resultsFile = new File( resultsFolder, "results.txt" );
         if ( !resultsFolder.exists( ) ) {
             resultsFolder.mkdirs( );
@@ -152,13 +146,6 @@ public class Utils extends QP {
      */
     public static double getPixelSize( ) {
         return getCurrentImageData( ).getServer( ).getPixelCalibration( ).getAveragedPixelSizeMicrons( );
-    }
-
-    public static List<ChannelDisplayInfo> getAllAvailableChannels() {
-        ImageData<BufferedImage> imageData = getCurrentImageData( );
-        List<ChannelDisplayInfo> channels = new ImageDisplay( imageData ).availableChannels( );
-
-        return channels;
     }
 
 }
