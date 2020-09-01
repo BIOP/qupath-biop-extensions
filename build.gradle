@@ -3,7 +3,7 @@ plugins {
 }
 
 group 'ch.epfl.biop.qupath'
-version '2.0.1'
+version '2.0.2'
 description = 'qupath-biop-extension'
 
 
