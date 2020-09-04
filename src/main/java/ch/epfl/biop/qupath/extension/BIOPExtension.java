@@ -1,6 +1,6 @@
 package ch.epfl.biop.qupath.extension;
 
-import ch.epfl.biop.qupath.abba.commands.LoadABBARoisToQuPathCommand;
+import ch.epfl.biop.qupath.atlas.allen.commands.LoadAtlasRoisToQuPathCommand;
 import ch.epfl.biop.qupath.analysis.RNAScopeCounts2;
 import ch.epfl.biop.qupath.commands.ApplyDisplaySettingsCommand;
 import org.controlsfx.control.action.Action;
@@ -32,12 +32,12 @@ public class BIOPExtension implements QuPathExtension {
     }
 
     public static class ABBACommands {
-        @ActionMenu("BIOP>ABBA>Load ABBA Rois into Project")
-        @ActionDescription("Allen Brain Beautiful Aligner (ABBA) commands")
+        @ActionMenu("BIOP>Atlas>Load Atlas Annotations into Open Image")
+        @ActionDescription("Commands for Allen Brain Atlas Communication")
         public final Action actionABBA;
 
         private ABBACommands(QuPathGUI qupath) {
-            actionABBA = qupath.createProjectAction( project -> new LoadABBARoisToQuPathCommand( project ).run());
+            actionABBA = qupath.createImageDataAction( project -> new LoadAtlasRoisToQuPathCommand( qupath ).run());
         }
     }
 
