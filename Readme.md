@@ -33,14 +33,14 @@ parent directory
 │   └── build.gradle
 ```
 
-0. Make sure you have the Java 11 SDK. We used [OpenJDK11](https://jdk.java.net/11/). Extract it to a folder, which we will call `JAVA_11_PATH`
+0. Make sure you have the Java 11 SDK. We used [OpenJDK14](https://jdk.java.net/14/). Extract it to a folder, which we will call `JAVA_14_PATH`
 1. Clone the project from here `https://github.com/BIOP/qupath-biop-extensions.git` and place it *in the same parent folder as your qupath repository*
 
-2. Run `gradlew.bat build -Dorg.gradle.java.home="JAVA_11_PATH"`
+2. Run `gradlew.bat build -Dorg.gradle.java.home="JAVA_14_PATH"`
 
 We used the latest gradle version to do this so if you have any issues, you can run:
 
-`gradlew.bat wrapper --gradle-version 5.3 --distribution-type all -Dorg.gradle.java.home="JAVA_11_PATH"`
+`gradlew.bat wrapper --gradle-version 5.3 --distribution-type all -Dorg.gradle.java.home="JAVA_14_PATH"`
 
 We have yet to test this more in depth to make sure that these instructions work for everyone. 
 
