@@ -1,6 +1,10 @@
 plugins {
     id 'java'
 }
+javadoc {
+    source += sourceSets.main.allJava
+    destinationDir = new File(projectDir, 'docs')
+}
 
 group 'ch.epfl.biop.qupath'
 version '2.0.3-SNAPSHOT'
