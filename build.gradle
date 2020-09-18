@@ -2,6 +2,11 @@ plugins {
     id 'java'
 }
 
+javadoc {
+    source += sourceSets.main.allJava
+    destinationDir = new File(projectDir, 'javadoc')
+}
+
 group 'ch.epfl.biop.qupath'
 version '2.0.3-SNAPSHOT'
 description = 'qupath-biop-extension'
@@ -32,6 +37,4 @@ dependencies {
     implementation 'net.imagej:ij:1.52s'
     compile group: 'org.controlsfx', name: 'controlsfx', version: '11.0.1'
     compile group: 'org.slf4j', name: 'log4j-over-slf4j', version: '1.7.30'
-
-
 }
