@@ -1,9 +1,0 @@
-ch.epfl.biop.atlas.allen
-ch.epfl.biop.qupath.analysis
-ch.epfl.biop.qupath.atlas.allen.api
-ch.epfl.biop.qupath.atlas.allen.commands
-ch.epfl.biop.qupath.atlas.allen.utils
-ch.epfl.biop.qupath.commands
-ch.epfl.biop.qupath.extension
-ch.epfl.biop.qupath.utils
-ch.epfl.biop.qupath.utils.internal
