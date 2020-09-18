@@ -35,6 +35,7 @@ public class AtlasTools {
     final static private String ATLAS_ROISET_FILENAME = "ABBA-RoiSet.zip";
 
     static PathObject getWarpedAtlasRegions( ImageData imageData ) {
+       // QuPathViewerPlus viewer = QuPathGUI.getInstance( ).getViewer( );
 
         List<PathObject> annotations = getFlattenedWarpedAtlasRegions( imageData );
 
@@ -43,8 +44,10 @@ public class AtlasTools {
 
         mappedAnnotations.forEach( ( id, annotation ) -> {
             PathObject parent = mappedAnnotations.get( (int) annotation.getMeasurementList( ).getMeasurementValue( "Parent Allen ID" ) );
-            if ( parent != null )
+            if ( parent != null ) {
                 parent.addPathObject( annotation );
+                //viewer.getOverlayOptions().setPathClassHidden( parent.getPathClass(), true );
+            }
         } );
 
         // Return just the root annotation from Allen Brain, ID 997

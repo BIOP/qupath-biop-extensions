@@ -7,13 +7,10 @@ import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.dialogs.Dialogs;
-import qupath.lib.gui.plugins.PluginRunnerFX;
 import qupath.lib.gui.scripting.QPEx;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.plugins.SimpleProgressMonitor;
 import qupath.lib.projects.ProjectImageEntry;
-import qupath.lib.scripting.QP;
 
 import java.awt.image.BufferedImage;
 import java.util.List;
@@ -50,23 +47,23 @@ public class ApplyDisplaySettingsCommand implements Runnable {
 
         // Get all images from Project
         List<ProjectImageEntry<BufferedImage>> imageList = qupath.getProject().getImageList();
-        SimpleProgressMonitor progress = new PluginRunnerFX( qupath ).makeProgressMonitor( );
 
-        progress.startMonitoring( "Applying Current Display Settings", imageList.size(), false);
-        imageList.parallelStream().forEach(entry -> {
+        imageList.stream().forEach(entry -> {
             ImageData<BufferedImage> imageData = null;
             try {
-                progress.updateProgress(1, entry.getImageName() , null);
                 imageData = entry.readImageData();
-
 
                 ImageServer server = entry.getServerBuilder().build();
 
                 if (imageData == null) imageData = qupath.createNewImageData(server, true);
+
+                logger.info( "Ref Type: {} vs Current Type {}", currentImageData.getImageType(), imageData.getImageType() );
+                logger.info( "Ref nC: {} vs Current nC {}", currentServer.getMetadata().getSizeC(), server.getMetadata().getSizeC() );
+
                 if (currentImageData.getImageType().equals(imageData.getImageType()) && currentServer.getMetadata().getSizeC() == server.getMetadata().getSizeC()) {
 
-                    QP.setChannelColors( imageData, channel_colors.toArray( new Integer[0] ) );
-                    QP.setChannelNames( imageData, channel_names.toArray( new String[0] ) );
+                    QPEx.setChannelColors( imageData, channel_colors.toArray( new Integer[0] ) );
+                    QPEx.setChannelNames( imageData, channel_names.toArray( new String[0] ) );
 
                     for( int i=0; i<channel_min.size(); i++ ) {
                         QPEx.setChannelDisplayRange( imageData, channel_names.get( i ), channel_min.get( i ), channel_max.get( i ) );
@@ -79,8 +76,6 @@ public class ApplyDisplaySettingsCommand implements Runnable {
                 logger.error(e.getMessage(), e);
             }
         });
-
-        progress.pluginCompleted( "Done" );
     }
 
 }
