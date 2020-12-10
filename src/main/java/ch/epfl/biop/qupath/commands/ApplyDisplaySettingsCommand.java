@@ -1,86 +1,103 @@
 package ch.epfl.biop.qupath.commands;
 
 import javafx.collections.ObservableList;
+import javafx.concurrent.Task;
+import org.controlsfx.dialog.ProgressDialog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.dialogs.Dialogs;
-import qupath.lib.gui.plugins.PluginRunnerFX;
-import qupath.lib.gui.scripting.QPEx;
 import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageChannel;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.plugins.SimpleProgressMonitor;
+import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.projects.ProjectImageEntry;
-import qupath.lib.scripting.QP;
 
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 public class ApplyDisplaySettingsCommand implements Runnable {
 
 
-    final static Logger logger = LoggerFactory.getLogger(ImageDisplay.class);
+    final static Logger logger = LoggerFactory.getLogger( ImageDisplay.class );
     private QuPathGUI qupath;
     private static String title = "Apply current display settings to project";
 
     //ApplyDisplaySettingsCommand
-    public ApplyDisplaySettingsCommand(final QuPathGUI qupath) {
-        if (!Dialogs.showConfirmDialog("Apply Brightness And Contrast", "Apply current display settings to all images?\n\nWill apply on images with the same image type and number of channels."))
+    public ApplyDisplaySettingsCommand( final QuPathGUI qupath ) {
+        if ( !Dialogs.showConfirmDialog( "Apply Brightness And Contrast", "Apply current display settings to all images?\n\nWill apply on images with the same image type and number of channels." ) )
             return;
         this.qupath = qupath;
 
     }
 
-    public void run() {
+    public void run( ) {
 
-        ImageData currentImageData = qupath.getImageData();
+        final ImageData currentImageData = qupath.getImageData( );
+        final int nC = currentImageData.getServer( ).nChannels( );
 
+        logger.info( "Current Image Data: {}", currentImageData );
 
-        ImageServer currentServer = currentImageData.getServer();
+        final ObservableList<ChannelDisplayInfo> currentChannels = qupath.getViewer( ).getImageDisplay( ).availableChannels( );
 
-        ObservableList<ChannelDisplayInfo> currentChannels = qupath.getViewer( ).getImageDisplay( ).availableChannels( );
-
-        List<String> channel_names = currentChannels.stream( ).map( c -> c.getName( ) ).collect( Collectors.toList( ) );
-        List<Float> channel_min =currentChannels.stream( ).map( c -> c.getMinDisplay( ) ).collect( Collectors.toList( ) );
-        List<Float> channel_max = currentChannels.stream( ).map( c -> c.getMaxDisplay( ) ).collect( Collectors.toList( ) );
-        List<Integer> channel_colors = currentChannels.stream( ).map( c -> c.getColor( ) ).collect( Collectors.toList( ) );
+        final List<String> channelNames = currentChannels.stream( ).map( c -> c.getName( ) ).collect( Collectors.toList( ) );
+        final List<Float> channelMins = currentChannels.stream( ).map( c -> c.getMinDisplay( ) ).collect( Collectors.toList( ) );
+        final List<Float> channelMaxs = currentChannels.stream( ).map( c -> c.getMaxDisplay( ) ).collect( Collectors.toList( ) );
+        final List<Integer> channelColors = currentChannels.stream( ).map( c -> c.getColor( ) ).collect( Collectors.toList( ) );
 
         // Get all images from Project
-        List<ProjectImageEntry<BufferedImage>> imageList = qupath.getProject().getImageList();
-        SimpleProgressMonitor progress = new PluginRunnerFX( qupath ).makeProgressMonitor( );
-
-        progress.startMonitoring( "Applying Current Display Settings", imageList.size(), false);
-        imageList.parallelStream().forEach(entry -> {
-            ImageData<BufferedImage> imageData = null;
-            try {
-                progress.updateProgress(1, entry.getImageName() , null);
-                imageData = entry.readImageData();
+        final List<ProjectImageEntry<BufferedImage>> imageList = qupath.getProject( ).getImageList( );
 
 
-                ImageServer server = entry.getServerBuilder().build();
+        Task<Void> worker = new Task<Void>( ) {
+            @Override
+            protected Void call( ) throws Exception {
+                imageList.stream( ).forEach( entry -> {
+                    updateMessage( "Trying to apply display settings to " + entry.getImageName( ) + "..." );
+                    try {
+                        ImageData<BufferedImage> thisImageData = entry.readImageData( );
+                        ImageServer server = thisImageData.getServer( );
 
-                if (imageData == null) imageData = qupath.createNewImageData(server, true);
-                if (currentImageData.getImageType().equals(imageData.getImageType()) && currentServer.getMetadata().getSizeC() == server.getMetadata().getSizeC()) {
+                        if ( currentImageData.getImageType( ).equals( thisImageData.getImageType( ) ) && nC == server.nChannels( ) ) {
+                            ImageDisplay display = new ImageDisplay( thisImageData );
+                            ObservableList<ChannelDisplayInfo> displaysChannel = display.availableChannels( );
+                            List<ImageChannel> channels = server.getMetadata( ).getChannels( );
+                            List<ImageChannel> newChannels = new ArrayList<>( channels );
 
-                    QP.setChannelColors( imageData, channel_colors.toArray( new Integer[0] ) );
-                    QP.setChannelNames( imageData, channel_names.toArray( new String[0] ) );
+                            // Iterate through each channel
+                            for ( int i = 0; i < nC; i++ ) {
+                                // Set the display properly, this saves it as metadata
+                                display.setMinMaxDisplay( displaysChannel.get( i ), channelMins.get( i ), channelMaxs.get( i ) );
+                                // Need to create new channels with the defined name and color
+                                newChannels.set( i, ImageChannel.getInstance( channelNames.get( i ), channelColors.get( i ) ) );
+                            }
+                            display.saveChannelColorProperties();
 
-                    for( int i=0; i<channel_min.size(); i++ ) {
-                        QPEx.setChannelDisplayRange( imageData, channel_names.get( i ), channel_min.get( i ), channel_max.get( i ) );
+                            var metadata = server.getMetadata( );
+                            var metadata2 = new ImageServerMetadata.Builder( metadata )
+                                    .channels( newChannels )
+                                    .build( );
 
+                            thisImageData.updateServerMetadata( metadata2 );
+
+                            logger.info( "Saving Display Settings for Image {}", entry.getImageName( ) );
+                            entry.saveImageData( thisImageData );
+                        }
+                    } catch ( Exception e ) {
+                        logger.error( e.getMessage( ), e );
                     }
-                    logger.info("Saving Display Settings for Image {}", entry.getImageName());
-                    entry.saveImageData(imageData);
-                }
-            } catch (Exception e) {
-                logger.error(e.getMessage(), e);
+                } );
+                return null;
             }
-        });
+        };
 
-        progress.pluginCompleted( "Done" );
+        ProgressDialog progress = new ProgressDialog( worker );
+        progress.setTitle( "Apply display settigns" );
+        qupath.submitShortTask( worker );
+        progress.showAndWait( );
     }
-
 }

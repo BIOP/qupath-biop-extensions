@@ -49,7 +49,8 @@ public class BIOPExtension implements QuPathExtension {
         public final Action actionApplyDisplay;
 
         private DisplayCommands(QuPathGUI qupath) {
-            actionApplyDisplay = qupath.createImageDataAction(imageData -> new ApplyDisplaySettingsCommand( qupath ).run());
+            actionApplyDisplay = qupath.createProjectAction( project -> new ApplyDisplaySettingsCommand( qupath ).run() );
+            //actionApplyDisplay = qupath.createImageDataAction(imageData -> new ApplyDisplaySettingsCommand( qupath ).run());
         }
     }
 

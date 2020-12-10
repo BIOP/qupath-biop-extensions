@@ -12,7 +12,6 @@ import qupath.imagej.tools.IJTools;
 import qupath.lib.awt.common.AwtTools;
 import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.ImageDisplay;
-import qupath.lib.display.SingleChannelDisplayInfo;
 import qupath.lib.gui.images.servers.ChannelDisplayTransformServer;
 import qupath.lib.gui.scripting.QPEx;
 import qupath.lib.gui.viewer.OverlayOptions;
@@ -42,19 +41,16 @@ public class GUIUtils extends QPEx {
     final public static String PROJECT_BASE_DIR = "{%PROJECT}";
 
     public static ImagePlus getImagePlus( PathObject pathObject, int downsample, boolean includeROI, boolean includeOverlay) {
-        return getImagePlus( pathObject, downsample, includeROI, includeOverlay, false, false );
+        return getImagePlus( getCurrentServer(), pathObject, downsample, includeROI, includeOverlay, false, false );
     }
 
     public static ImagePlus getImagePlus( PathObject pathObject, int downsample) {
-        return getImagePlus( pathObject, downsample, true, false, false, false );
+        return getImagePlus( getCurrentServer(), pathObject, downsample, true, false, false, false );
     }
 
-    // This replicates the ExtractRegionCommand but makes it more convenient for us to work with it.
-    public static ImagePlus getImagePlus( PathObject pathObject, int downsample, boolean includeROI, boolean includeOverlay, boolean doZ, boolean doT ) {
+    public static ImagePlus getImagePlus( ImageServer server, PathObject pathObject, int downsample, boolean includeROI, boolean includeOverlay, boolean doZ, boolean doT ) {
 
-        ImageServer server = getCurrentServer( );
         QuPathViewer viewer = getCurrentViewer( );
-
         String unit = server.getPixelCalibration( ).getPixelWidthUnit( );
 
         // Color transforms are (currently) only applied for brightfield images - for fluorescence we always provide everything as unchanged as possible
@@ -128,10 +124,7 @@ public class GUIUtils extends QPEx {
 
             // Set display ranges if we can
             if ( viewer != null && imp instanceof CompositeImage ) {
-                var availableChannels = viewer.getImageDisplay( ).availableChannels( ).stream( )
-                        .filter( c -> c instanceof SingleChannelDisplayInfo )
-                        .map( c -> (SingleChannelDisplayInfo) c )
-                        .collect( Collectors.toList( ) );
+                ObservableList<ChannelDisplayInfo> availableChannels = viewer.getImageDisplay().selectedChannels();
                 CompositeImage impComp = (CompositeImage) imp;
                 if ( availableChannels.size( ) == imp.getNChannels( ) ) {
                     for ( int c = 0; c < availableChannels.size( ); c++ ) {
@@ -150,6 +143,12 @@ public class GUIUtils extends QPEx {
         } catch ( IOException e ) {
             return null;
         }
+    }
+    // This replicates the ExtractRegionCommand but makes it more convenient for us to work with it.
+    public static ImagePlus getImagePlus( PathObject pathObject, int downsample, boolean includeROI, boolean includeOverlay, boolean doZ, boolean doT ) {
+
+        ImageServer server = getCurrentServer( );
+        return getImagePlus( server, pathObject, downsample, includeROI, includeOverlay, doZ, doT);
     }
 
     public static ImageServer getSelectedChannelsServer( ImageServer currentServer, List<String> channelNames ){
