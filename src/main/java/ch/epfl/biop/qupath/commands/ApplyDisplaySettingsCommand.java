@@ -1,103 +1,87 @@
 package ch.epfl.biop.qupath.commands;
 
 import javafx.collections.ObservableList;
-import javafx.concurrent.Task;
-import org.controlsfx.dialog.ProgressDialog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.display.ChannelDisplayInfo;
+import qupath.lib.display.DirectServerChannelInfo;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.dialogs.Dialogs;
+import qupath.lib.gui.scripting.QPEx;
 import qupath.lib.images.ImageData;
-import qupath.lib.images.servers.ImageChannel;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.projects.ProjectImageEntry;
 
 import java.awt.image.BufferedImage;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 public class ApplyDisplaySettingsCommand implements Runnable {
 
 
-    final static Logger logger = LoggerFactory.getLogger( ImageDisplay.class );
-    private QuPathGUI qupath;
+    final static Logger logger = LoggerFactory.getLogger(ImageDisplay.class);
     private static String title = "Apply current display settings to project";
+    private QuPathGUI qupath;
 
     //ApplyDisplaySettingsCommand
-    public ApplyDisplaySettingsCommand( final QuPathGUI qupath ) {
-        if ( !Dialogs.showConfirmDialog( "Apply Brightness And Contrast", "Apply current display settings to all images?\n\nWill apply on images with the same image type and number of channels." ) )
+    public ApplyDisplaySettingsCommand(final QuPathGUI qupath) {
+        if (!Dialogs.showConfirmDialog("Apply Brightness And Contrast", "Apply current display settings to all images?\n\nWill apply on images with the same image type and number of channels."))
             return;
         this.qupath = qupath;
 
     }
 
-    public void run( ) {
+    public void run() {
 
-        final ImageData currentImageData = qupath.getImageData( );
-        final int nC = currentImageData.getServer( ).nChannels( );
+        ImageData currentImageData = qupath.getImageData();
+        currentImageData.removeProperty("qupath.lib.display.ImageDisplay");
 
-        logger.info( "Current Image Data: {}", currentImageData );
+        ImageServer currentServer = currentImageData.getServer();
 
-        final ObservableList<ChannelDisplayInfo> currentChannels = qupath.getViewer( ).getImageDisplay( ).availableChannels( );
-
-        final List<String> channelNames = currentChannels.stream( ).map( c -> c.getName( ) ).collect( Collectors.toList( ) );
-        final List<Float> channelMins = currentChannels.stream( ).map( c -> c.getMinDisplay( ) ).collect( Collectors.toList( ) );
-        final List<Float> channelMaxs = currentChannels.stream( ).map( c -> c.getMaxDisplay( ) ).collect( Collectors.toList( ) );
-        final List<Integer> channelColors = currentChannels.stream( ).map( c -> c.getColor( ) ).collect( Collectors.toList( ) );
+        ObservableList<ChannelDisplayInfo> currentChannels = qupath.getViewer().getImageDisplay().availableChannels();
+        // Careful with channel names that have (C1), (C2), etc...
+        List<String> channel_names = currentChannels.stream().map(c -> {
+                    if (c instanceof DirectServerChannelInfo)
+                        return currentServer.getChannel(((DirectServerChannelInfo) c).getChannel()).getName();
+                    else
+                        return (c.getName());
+                }
+        ).collect(Collectors.toList());
+        List<Float> channel_min = currentChannels.stream().map(c -> c.getMinDisplay()).collect(Collectors.toList());
+        List<Float> channel_max = currentChannels.stream().map(c -> c.getMaxDisplay()).collect(Collectors.toList());
+        List<Integer> channel_colors = currentChannels.stream().map(c -> c.getColor()).collect(Collectors.toList());
 
         // Get all images from Project
-        final List<ProjectImageEntry<BufferedImage>> imageList = qupath.getProject( ).getImageList( );
+        List<ProjectImageEntry<BufferedImage>> imageList = qupath.getProject().getImageList();
 
+        imageList.stream().forEach(entry -> {
+            ImageData<BufferedImage> imageData = null;
+            try {
+                imageData = entry.readImageData();
 
-        Task<Void> worker = new Task<Void>( ) {
-            @Override
-            protected Void call( ) throws Exception {
-                imageList.stream( ).forEach( entry -> {
-                    updateMessage( "Trying to apply display settings to " + entry.getImageName( ) + "..." );
-                    try {
-                        ImageData<BufferedImage> thisImageData = entry.readImageData( );
-                        ImageServer server = thisImageData.getServer( );
+                ImageServer server = entry.getServerBuilder().build();
 
-                        if ( currentImageData.getImageType( ).equals( thisImageData.getImageType( ) ) && nC == server.nChannels( ) ) {
-                            ImageDisplay display = new ImageDisplay( thisImageData );
-                            ObservableList<ChannelDisplayInfo> displaysChannel = display.availableChannels( );
-                            List<ImageChannel> channels = server.getMetadata( ).getChannels( );
-                            List<ImageChannel> newChannels = new ArrayList<>( channels );
+                if (imageData == null) imageData = qupath.createNewImageData(server, true);
 
-                            // Iterate through each channel
-                            for ( int i = 0; i < nC; i++ ) {
-                                // Set the display properly, this saves it as metadata
-                                display.setMinMaxDisplay( displaysChannel.get( i ), channelMins.get( i ), channelMaxs.get( i ) );
-                                // Need to create new channels with the defined name and color
-                                newChannels.set( i, ImageChannel.getInstance( channelNames.get( i ), channelColors.get( i ) ) );
-                            }
-                            display.saveChannelColorProperties();
+                logger.info("Ref Type: {} vs Current Type {}", currentImageData.getImageType(), imageData.getImageType());
+                logger.info("Ref nC: {} vs Current nC {}", currentServer.getMetadata().getSizeC(), server.getMetadata().getSizeC());
 
-                            var metadata = server.getMetadata( );
-                            var metadata2 = new ImageServerMetadata.Builder( metadata )
-                                    .channels( newChannels )
-                                    .build( );
+                if (currentImageData.getImageType().equals(imageData.getImageType()) && currentServer.getMetadata().getSizeC() == server.getMetadata().getSizeC()) {
 
-                            thisImageData.updateServerMetadata( metadata2 );
+                    QPEx.setChannelColors(imageData, channel_colors.toArray(new Integer[0]));
+                    QPEx.setChannelNames(imageData, channel_names.toArray(new String[0]));
 
-                            logger.info( "Saving Display Settings for Image {}", entry.getImageName( ) );
-                            entry.saveImageData( thisImageData );
-                        }
-                    } catch ( Exception e ) {
-                        logger.error( e.getMessage( ), e );
+                    for (int i = 0; i < channel_min.size(); i++) {
+                        QPEx.setChannelDisplayRange(imageData, channel_names.get(i), channel_min.get(i), channel_max.get(i));
+
                     }
-                } );
-                return null;
+                    logger.info("Saving Display Settings for Image {}", entry.getImageName());
+                    entry.saveImageData(imageData);
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage(), e);
             }
-        };
-
-        ProgressDialog progress = new ProgressDialog( worker );
-        progress.setTitle( "Apply display settigns" );
-        qupath.submitShortTask( worker );
-        progress.showAndWait( );
+        });
     }
 }
