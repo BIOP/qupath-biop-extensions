@@ -2,6 +2,8 @@ package ch.epfl.biop.qupath.atlas.allen.api;
 
 import ch.epfl.biop.atlas.allen.AllenOntologyJson;
 import ch.epfl.biop.qupath.atlas.allen.utils.RoiSetLoader;
+import ij.IJ;
+import ij.ImagePlus;
 import ij.gui.Roi;
 import javafx.scene.paint.Color;
 import org.slf4j.Logger;
@@ -10,7 +12,10 @@ import qupath.imagej.tools.IJTools;
 import qupath.lib.common.ColorTools;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageServer;
+import qupath.lib.images.servers.RotatedImageServer;
 import qupath.lib.objects.PathObject;
+import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.PathObjects;
 import qupath.lib.projects.Project;
 import qupath.lib.projects.ProjectImageEntry;
@@ -19,6 +24,7 @@ import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.interfaces.ROI;
 import qupath.lib.scripting.QP;
 
+import java.awt.geom.AffineTransform;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -111,9 +117,47 @@ public class AtlasTools {
         rois.remove(left);
         rois.remove(right);
 
+        // Rotation for rotated servers
+        ImageServer<?> server = imageData.getServer();
+
+        AffineTransform transform = null;
+
+        if (server instanceof RotatedImageServer) {
+            // The roi will need to be transformed before being imported
+            // First : get the rotation
+            RotatedImageServer ris = (RotatedImageServer) server;
+            switch (ris.getRotation()) {
+                case ROTATE_NONE: // No rotation.
+                    break;
+                case ROTATE_90: // Rotate 90 degrees clockwise.
+                    transform = AffineTransform.getRotateInstance(Math.PI/2.0);
+                    transform.translate(0, -server.getWidth());
+                    break;
+                case ROTATE_180: // Rotate 180 degrees.
+                    transform = AffineTransform.getRotateInstance(Math.PI);
+                    transform.translate(-server.getWidth(), -server.getHeight());
+                    break;
+                case ROTATE_270: // Rotate 270 degrees
+                    transform = AffineTransform.getRotateInstance(Math.PI*3.0/2.0);
+                    transform.translate(-server.getHeight(), 0);
+                    break;
+                default:
+                    System.err.println("Unknow rotation for rotated image server: "+ris.getRotation());
+            }
+        }
+
+        AffineTransform finalTransform = transform;
+
         List<PathObject> annotations = rois.stream().map(roi -> {
             // Create the PathObject
+
+            //PathObject object = IJTools.convertToAnnotation( imp, imageData.getServer(), roi, 1, null );
             PathObject object = PathObjects.createAnnotationObject(IJTools.convertToROI(roi, 0, 0, 1, null));
+
+            // Handles rotated image server
+            if (finalTransform !=null) {
+                object = PathObjectTools.transformObject(object, finalTransform, true);
+            }
 
             // Add metadata to object as acquired from the Ontology
             int object_id = Integer.parseInt(roi.getName());
