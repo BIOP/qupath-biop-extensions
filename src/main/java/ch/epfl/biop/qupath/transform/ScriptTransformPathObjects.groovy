@@ -16,14 +16,14 @@ def rt = TransformHelper.realTransformFromBigWarpFile(bwLandmarkFile, false)
 def transformer = TransformHelper.getJTSFilter(rt)
 
 // Transforms all annotations
-all_annotations.each{ annotation ->
+def transformed_annotations = all_annotations.collect{ annotation ->
     def transformed_annotation = TransformHelper.transformPathObject(annotation, transformer, true)
-    addObject(transformed_annotation)
 }
+addObjects(transformed_annotations)
 
-all_detections.each{ detection ->
+def transformed_detections = all_detections.collect { detection ->
     def transformed_detection = TransformHelper.transformPathObject(detection, transformer, false)
-    addObject(transformed_detection)
 }
+addObjects(transformed_detections)
 
 fireHierarchyUpdate()
