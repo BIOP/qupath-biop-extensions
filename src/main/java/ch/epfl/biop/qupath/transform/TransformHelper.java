@@ -7,8 +7,13 @@ import net.imglib2.realtransform.RealTransform;
 import net.imglib2.realtransform.ThinplateSplineTransform;
 import net.imglib2.realtransform.inverse.WrappedIterativeInvertibleRealTransform;
 import org.locationtech.jts.geom.*;
+import qupath.lib.gui.QuPathApp;
+import qupath.lib.objects.PathAnnotationObject;
+import qupath.lib.objects.PathDetectionObject;
 import qupath.lib.objects.PathObject;
+import qupath.lib.objects.PathObjects;
 import qupath.lib.roi.GeometryTools;
+import qupath.lib.roi.interfaces.ROI;
 
 import java.io.File;
 import java.io.FileReader;
@@ -27,6 +32,10 @@ import java.util.List;
 public class TransformHelper {
 
     public static void main(String... args) throws Exception {
+        QuPathApp.launch(QuPathApp.class);
+    }
+
+    static void testRectangleTransform() throws Exception {
 
         // Retrieves a BigWarp landmark file
         String directory = "src\\test\\resources\\";
@@ -44,29 +53,39 @@ public class TransformHelper {
         transformedRectangle.apply(TransformHelper.getJTSFilter(rt));
 
         System.out.println("Transformed rectangle : "+transformedRectangle.toString());
-
     }
 
     /**
-     * In place transformation of an annotation object
+     * Returns a transformed PathObject (Annotation or detection) based
+     * on the original geometry of the input path object
      * @param object qupath annotation or detection object
      * @param transform jts free form transformation
      */
-    public static boolean transformPathObject(PathObject object, CoordinateSequenceFilter transform, boolean checkGeometryValidity) {
-        if (!object.getROI().isEmpty()) { // Necessary check ?
-            Geometry geometry = object.getROI().getGeometry();
-            GeometryTools.attemptOperation(geometry, (g) -> {
-                g.apply(transform);
-                return g;
-            });
-            if (checkGeometryValidity) {
-                return geometry.isValid();
-            } else {
-                return true;
+    public static PathObject transformPathObject(PathObject object, CoordinateSequenceFilter transform, boolean checkGeometryValidity) throws Exception {
+
+        ROI original_roi = object.getROI();
+
+        Geometry geometry = original_roi.getGeometry();
+
+        GeometryTools.attemptOperation(geometry, (g) -> {
+            g.apply(transform);
+            return g;
+        });
+
+        if (checkGeometryValidity) {
+            if (!geometry.isValid()) {
+                throw new Exception("Invalid geometry for transformed object"+object);
             }
+        }
+
+        ROI transformed_roi = GeometryTools.geometryToROI(geometry, original_roi.getImagePlane());
+
+        if (object instanceof PathAnnotationObject) {
+            return PathObjects.createAnnotationObject(transformed_roi);
+        } else if (object instanceof PathDetectionObject) {
+            return PathObjects.createDetectionObject(transformed_roi);
         } else {
-            // A trnsformed empty object is still empty, that's valid.
-            return true;
+            throw new Exception("Unknown PathObject class for class "+object.getClass().getSimpleName());
         }
     }
 

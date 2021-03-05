@@ -28,9 +28,18 @@ repositories {
     maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
     maven { url 'https://plugins.gradle.org/m2/' }
     maven { url 'https://maven.scijava.org/content/groups/public' }
+
+    flatDir {
+        //Dirty way of adding jars, but I couldn't launch easily QuPathApp otherwise from this module
+        dirs 'C:\\QuPath-0.2.3\\app'
+    }
+
 }
 
 dependencies {
+
+    implementation group: 'qupath', name: 'qupath'
+
     implementation group: 'qupath', name: 'qupath-core'
     implementation group: 'qupath', name: 'qupath-gui-fx'
     implementation group: 'qupath', name: 'qupath-extension-processing'
@@ -41,4 +50,5 @@ dependencies {
 
     compile group: 'org.controlsfx', name: 'controlsfx', version: '11.0.1'
     compile group: 'org.slf4j', name: 'log4j-over-slf4j', version: '1.7.30'
+
 }
