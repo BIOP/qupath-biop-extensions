@@ -16,6 +16,7 @@ import qupath.lib.roi.GeometryTools;
 import qupath.lib.roi.interfaces.ROI;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -173,6 +174,16 @@ public class TransformHelper {
     }
 
     /**
+     * Uses {@link RealTransformDeSerializer} to deserialize a RealTransform object
+     * @param f file to deserialize
+     * @return an imglib2 RealTransform object
+     */
+    public static RealTransform getRealTransform(File f) throws FileNotFoundException {
+        FileReader fileReader = new FileReader(f.getAbsolutePath());
+        return RealTransformDeSerializer.deserialize(fileReader);
+    }
+
+    /**
      * Gets an imglib2 realtransform object for a number of landmarks
      *
      * @param moving_pts moving points
@@ -217,7 +228,7 @@ public class TransformHelper {
         return new CoordinateSequenceFilter() {
             @Override
             public void filter(CoordinateSequence seq, int i) {
-                RealPoint pt = new RealPoint(2);
+                RealPoint pt = new RealPoint(3);
                 pt.setPosition(seq.getOrdinate(i, 0),0);
                 pt.setPosition(seq.getOrdinate(i, 1),1);
                 rt.apply(pt,pt);
