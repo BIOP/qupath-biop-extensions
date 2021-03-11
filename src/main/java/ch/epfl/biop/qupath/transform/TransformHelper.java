@@ -1,6 +1,6 @@
 package ch.epfl.biop.qupath.transform;
 
-import com.opencsv.CSVReader;
+//import com.opencsv.CSVReader;
 import net.imglib2.RealPoint;
 import net.imglib2.realtransform.InvertibleRealTransform;
 import net.imglib2.realtransform.RealTransform;
@@ -36,7 +36,7 @@ public class TransformHelper {
         QuPathApp.launch(QuPathApp.class);
     }
 
-    static void testRectangleTransform() throws Exception {
+    /*static void testRectangleTransform() throws Exception {
 
         // Retrieves a BigWarp landmark file
         String directory = "src\\test\\resources\\";
@@ -54,7 +54,7 @@ public class TransformHelper {
         transformedRectangle.apply(TransformHelper.getJTSFilter(rt));
 
         System.out.println("Transformed rectangle : "+transformedRectangle.toString());
-    }
+    }*/
 
     /**
      * Returns a transformed PathObject (Annotation or detection) based
@@ -88,6 +88,8 @@ public class TransformHelper {
         } else {
             throw new Exception("Unknown PathObject class for class "+object.getClass().getSimpleName());
         }
+
+        // TODO : PathCellObject
     }
 
     /**
@@ -99,7 +101,7 @@ public class TransformHelper {
      * @return an imglib2 {@link RealTransform} object
      * @throws Exception if the file does not exists or is not valid
      */
-    public static RealTransform realTransformFromBigWarpFile(File f, boolean force3d) throws Exception{
+    /*public static RealTransform realTransformFromBigWarpFile(File f, boolean force3d) throws Exception{
 
         CSVReader reader = new CSVReader( new FileReader( f.getAbsolutePath() ));
         List< String[] > rows;
@@ -171,7 +173,7 @@ public class TransformHelper {
         } else {
             return irt;
         }
-    }
+    }*/
 
     /**
      * Uses {@link RealTransformDeSerializer} to deserialize a RealTransform object
