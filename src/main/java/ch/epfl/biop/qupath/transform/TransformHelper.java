@@ -1,68 +1,176 @@
 package ch.epfl.biop.qupath.transform;
 
-//import com.opencsv.CSVReader;
 import net.imglib2.RealPoint;
-import net.imglib2.realtransform.InvertibleRealTransform;
 import net.imglib2.realtransform.RealTransform;
 import net.imglib2.realtransform.ThinplateSplineTransform;
-import net.imglib2.realtransform.inverse.WrappedIterativeInvertibleRealTransform;
-import org.locationtech.jts.geom.*;
+import org.locationtech.jts.geom.CoordinateSequence;
+import org.locationtech.jts.geom.CoordinateSequenceFilter;
+import org.locationtech.jts.geom.Geometry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import qupath.lib.gui.QuPathApp;
-import qupath.lib.objects.PathAnnotationObject;
-import qupath.lib.objects.PathDetectionObject;
-import qupath.lib.objects.PathObject;
-import qupath.lib.objects.PathObjects;
+import qupath.lib.images.ImageData;
+import qupath.lib.objects.*;
+import qupath.lib.objects.hierarchy.PathObjectHierarchy;
+import qupath.lib.projects.ProjectImageEntry;
 import qupath.lib.roi.GeometryTools;
 import qupath.lib.roi.interfaces.ROI;
+import qupath.lib.scripting.QP;
 
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
-import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import static qupath.lib.scripting.QP.fireHierarchyUpdate;
 
 /**
- * Utility class which briges real transformation of the imglib2 world and
+ * Utility class which bridges real transformation of the ImgLib2 world and
  * makes it easily usable into JTS world, mainly used by QuPath
- *
+ * <p>
  * See initial forum thread : https://forum.image.sc/t/qupath-arbitrarily-transform-detections-and-annotations/49674
- * @author Nicolas Chiaruttini, EPFL, 2020
+ * For documentation regarding this tool, see https://c4science.ch/w/bioimaging_and_optics_platform_biop/image-processing/wsi_registration_fjii_qupath/
+ *
+ * @author Nicolas Chiaruttini, EPFL, 2021
+ * @author Olivier Burri, EPFL, 2021
  */
 
 public class TransformHelper {
 
+    final private static Logger logger = LoggerFactory.getLogger(TransformHelper.class);
+
+    // Pattern to match the serialized transform in the same folder as the target image data the
+    private static Pattern transformFilePattern = Pattern.compile("transform\\_(?<target>\\d+)\\_(?<source>\\d+)\\.json");
+
+    /**
+     * Main class for debugging
+     *
+     * @param args
+     * @throws Exception
+     */
     public static void main(String... args) throws Exception {
-        QuPathApp.launch(QuPathApp.class);
+        String projectPath = "\\\\svfas6.epfl.ch\\biop\\public\\luisa.spisak_UPHUELSKEN\\Overlay\\qp\\project.qpproj";
+        QuPathApp.launch(QuPathApp.class, projectPath);
     }
 
-    /*static void testRectangleTransform() throws Exception {
+    /**
+     * TODO
+     *
+     * @param targetImageData
+     * @param copyMeasurements
+     * @throws Exception
+     */
+    public static void transferMatchingAnnotationsToImage(ImageData targetImageData, boolean copyMeasurements) throws Exception {
+        // Find in project the source data that has annotations/detections AND a Serialized RealTransform in the
+        List<ProjectImageEntry<BufferedImage>> entries = QP.getProject().getImageList();
+        ProjectImageEntry targetEntry = QP.getProject().getEntry(targetImageData);
 
-        // Retrieves a BigWarp landmark file
-        String directory = "src\\test\\resources\\";
-        String fileName = "landmarks-v1.csv";
-        File bwLandmarkFile = new File(directory+fileName);
-        RealTransform rt = realTransformFromBigWarpFile(bwLandmarkFile, false);
 
-        // Let's make a simple rectangle
-        Geometry rectangle = GeometryTools.createRectangle(0,0,100,100);
-        System.out.println("Initial rectangle : "+rectangle.toString());
+        String targetID = targetEntry.getID();
 
-        Geometry transformedRectangle = rectangle.copy();
+        // Find transform file: list all files in folder
+        Path targetEntryPath = targetEntry.getEntryPath();
+        List<Path> candidateTransformPaths = Files.list(targetEntryPath).filter(path -> {
+            Matcher matcher = transformFilePattern.matcher(path.getFileName().toString());
+            if (matcher.matches())
+                // check that the target is our current ID
+                return matcher.group("target").equals(targetID);
+            return false;
+        }).collect(Collectors.toList());
 
-        // Apply the transformation
-        transformedRectangle.apply(TransformHelper.getJTSFilter(rt));
+        // If the list of Paths is not empty, then we have candidates, yay!
+        logger.info("Found {} candidate transforms for image {}", candidateTransformPaths.size(), targetEntry.getImageName());
 
-        System.out.println("Transformed rectangle : "+transformedRectangle.toString());
-    }*/
+        // No transforms, we are done
+        if (candidateTransformPaths.size() == 0) return;
+
+        List<ProjectImageEntry> candidateSourceEntries = new ArrayList<>();
+        List<Path> finalCandidateTransformPaths = new ArrayList<>();
+        for (Path path : candidateTransformPaths) {
+            Matcher matcher = transformFilePattern.matcher(path.getFileName().toString());
+            if (matcher.matches()) {
+                String sourceID = matcher.group("source");
+                Optional<ProjectImageEntry<BufferedImage>> potentialEntry = entries.stream().filter(entry -> entry.getID().equals(sourceID)).findFirst();
+                if (potentialEntry.isPresent()) {
+                    candidateSourceEntries.add(potentialEntry.get());
+                    finalCandidateTransformPaths.add(path);
+                } else {
+                    logger.info("No Entries with ID {} in project", sourceID);
+                }
+            }
+        }
+        // At this point we have a list of ProjectImageEntries we can use
+        if (candidateSourceEntries.size() == 0) {
+            logger.info("Unfortunately, no valid source images were found for {}", targetEntry.getImageName());
+        }
+        // TODO see what we do when there is more than one entry
+        if (candidateSourceEntries.size() > 1) {
+            logger.info("Multiple source images found, using only first one: {}", candidateSourceEntries.get(0).getImageName());
+        }
+
+        ProjectImageEntry sourceEntry = candidateSourceEntries.get(0);
+        Path sourceTransformPath = finalCandidateTransformPaths.get(0);
+        // Get the hierarchy of the source
+        PathObjectHierarchy sourceHierarchy = sourceEntry.readHierarchy();
+        PathObjectHierarchy targetHierarchy = targetEntry.readHierarchy();
+
+        // Rebuild
+        RealTransform rt = TransformHelper.getRealTransform(sourceTransformPath.toFile());
+
+        // Makes JTS transformer
+        CoordinateSequenceFilter transformer = TransformHelper.getJTSFilter(rt);
+
+        // Transforms all objects below the root object
+        List<PathObject> transformedObjects = new ArrayList<>();
+
+        for (PathObject o : sourceHierarchy.getRootObject().getChildObjects()) {
+            transformedObjects.add(TransformHelper.transformPathObjectAndChildren(o, transformer, true, copyMeasurements));
+        }
+        targetHierarchy.addPathObjects(transformedObjects);
+
+        targetImageData.getHierarchy().setHierarchy(targetHierarchy);
+        targetEntry.saveImageData(targetImageData);
+
+        fireHierarchyUpdate();
+    }
+
+    /**
+     * Recursive approach to transform a PathObject and all its children based on the provided CoordinateSequenceFilter
+     * see {@link #transformPathObject(PathObject, CoordinateSequenceFilter, boolean, boolean)}
+     *
+     * @param object           qupath annotation or detection object
+     * @param transform        jts free form transformation
+     * @param copyMeasurements whether or not to transfer all the source PathObject Measurements to the resulting PathObject
+     */
+    public static PathObject transformPathObjectAndChildren(PathObject object, CoordinateSequenceFilter transform, boolean checkGeometryValidity, boolean copyMeasurements) throws Exception {
+
+        PathObject transformedObject = transformPathObject(object, transform, checkGeometryValidity, copyMeasurements);
+
+        if (object.hasChildren()) {
+            for (PathObject child : object.getChildObjects()) {
+                transformedObject.addPathObject(transformPathObjectAndChildren(child, transform, checkGeometryValidity, copyMeasurements));
+            }
+        }
+        return transformedObject;
+    }
 
     /**
      * Returns a transformed PathObject (Annotation or detection) based
      * on the original geometry of the input path object
-     * @param object qupath annotation or detection object
-     * @param transform jts free form transformation
+     *
+     * @param object           qupath annotation or detection object
+     * @param transform        jts free form transformation
+     * @param copyMeasurements whether or not to transfer all the source PathObject Measurements to the resulting PathObject
      */
-    public static PathObject transformPathObject(PathObject object, CoordinateSequenceFilter transform, boolean checkGeometryValidity) throws Exception {
+    public static PathObject transformPathObject(PathObject object, CoordinateSequenceFilter transform, boolean checkGeometryValidity, boolean copyMeasurements) throws Exception {
 
         ROI original_roi = object.getROI();
 
@@ -73,110 +181,43 @@ public class TransformHelper {
             return g;
         });
 
+        // Handle the case of a cell
         if (checkGeometryValidity) {
             if (!geometry.isValid()) {
-                throw new Exception("Invalid geometry for transformed object"+object);
+                throw new Exception("Invalid geometry for transformed object" + object);
             }
         }
-
+        // TODO comment a bit more
         ROI transformed_roi = GeometryTools.geometryToROI(geometry, original_roi.getImagePlane());
 
+
+        PathObject transformedObject;
         if (object instanceof PathAnnotationObject) {
-            return PathObjects.createAnnotationObject(transformed_roi);
+            transformedObject = PathObjects.createAnnotationObject(transformed_roi, object.getPathClass(), copyMeasurements ? object.getMeasurementList() : null);
+        } else if (object instanceof PathCellObject) {
+            // Need to transform the nucleus as well
+            ROI original_nuc = ((PathCellObject) object).getNucleusROI();
+
+            Geometry nuc_geometry = original_nuc.getGeometry();
+
+            GeometryTools.attemptOperation(nuc_geometry, (g) -> {
+                g.apply(transform);
+                return g;
+            });
+            ROI transformed_nuc_roi = GeometryTools.geometryToROI(nuc_geometry, original_roi.getImagePlane());
+            transformedObject = PathObjects.createCellObject(transformed_roi, transformed_nuc_roi, object.getPathClass(), copyMeasurements ? object.getMeasurementList() : null);
         } else if (object instanceof PathDetectionObject) {
-            return PathObjects.createDetectionObject(transformed_roi);
+            transformedObject = PathObjects.createDetectionObject(transformed_roi, object.getPathClass(), copyMeasurements ? object.getMeasurementList() : null);
         } else {
-            throw new Exception("Unknown PathObject class for class "+object.getClass().getSimpleName());
+            throw new Exception("Unknown PathObject class for class " + object.getClass().getSimpleName());
         }
 
-        // TODO : PathCellObject
+        return transformedObject;
     }
 
     /**
-     * Creates a RealTransform object from a BigWarp landmark file
-     *
-     * @param f bigwarp landmark file
-     * @param force3d forces to return a 3d transform, even if the landmarks are 2 dimensional,
-     *                in which case the 3rd dimension is unmodified
-     * @return an imglib2 {@link RealTransform} object
-     * @throws Exception if the file does not exists or is not valid
-     */
-    /*public static RealTransform realTransformFromBigWarpFile(File f, boolean force3d) throws Exception{
-
-        CSVReader reader = new CSVReader( new FileReader( f.getAbsolutePath() ));
-        List< String[] > rows;
-        rows = reader.readAll();
-        reader.close();
-        if( rows == null || rows.size() < 1 )
-        {
-            throw new IOException("Wrong number of rows in file "+f.getAbsolutePath());
-        }
-
-        int ndims = 3;
-        int expectedRowLength = 8;
-        int numRowsTmp = 0;
-
-        ArrayList<double[]> movingPts = new ArrayList<>();
-        ArrayList<double[]>	targetPts = new ArrayList<>();
-
-        for( String[] row : rows )
-        {
-            // detect a file with 2d landmarks
-            if( numRowsTmp == 0 && // only check for the first row
-                    row.length == 6 )
-            {
-                ndims = 2;
-                expectedRowLength = 6;
-            }
-
-            if( row.length != expectedRowLength  )
-                throw new IOException( "Invalid file - not enough columns" );
-
-            double[] movingPt = new double[ ndims ];
-            double[] targetPt = new double[ ndims ];
-
-            int k = 2;
-            for( int d = 0; d < ndims; d++ )
-                movingPt[ d ] = Double.parseDouble( row[ k++ ]);
-
-            for( int d = 0; d < ndims; d++ )
-                targetPt[ d ] = Double.parseDouble( row[ k++ ]);
-
-            {
-                movingPts.add( movingPt );
-                targetPts.add( targetPt );
-            }
-            numRowsTmp++;
-        }
-
-        List<RealPoint> moving_pts = new ArrayList<>();
-        List<RealPoint> fixed_pts = new ArrayList<>();
-
-        for (int indexLandmark = 0; indexLandmark<numRowsTmp; indexLandmark++) {
-
-            RealPoint moving = new RealPoint(ndims);
-            RealPoint fixed = new RealPoint(ndims);
-
-            moving.setPosition(movingPts.get(indexLandmark));
-            fixed.setPosition(targetPts.get(indexLandmark));
-
-            moving_pts.add(moving);
-            fixed_pts.add(fixed);
-        }
-
-        ThinplateSplineTransform tst = getTransform(moving_pts, fixed_pts, false);
-
-        InvertibleRealTransform irt = new WrappedIterativeInvertibleRealTransform<>(tst);
-
-        if (force3d&&(irt.numSourceDimensions()==2)) {
-            return new Wrapped2DTransformAs3D(irt);
-        } else {
-            return irt;
-        }
-    }*/
-
-    /**
      * Uses {@link RealTransformDeSerializer} to deserialize a RealTransform object
+     *
      * @param f file to deserialize
      * @return an imglib2 RealTransform object
      */
@@ -189,8 +230,8 @@ public class TransformHelper {
      * Gets an imglib2 realtransform object for a number of landmarks
      *
      * @param moving_pts moving points
-     * @param fixed_pts fixed points
-     * @param force2d returns a 2d realtransform only and ignores 3rd dimension
+     * @param fixed_pts  fixed points
+     * @param force2d    returns a 2d realtransform only and ignores 3rd dimension
      * @return
      */
     public static ThinplateSplineTransform getTransform(List<RealPoint> moving_pts, List<RealPoint> fixed_pts, boolean force2d) {
@@ -202,12 +243,12 @@ public class TransformHelper {
         double[][] mPts = new double[nbDimensions][nbLandmarks];
         double[][] fPts = new double[nbDimensions][nbLandmarks];
 
-        for (int i = 0;i<nbLandmarks;i++) {
-            for (int d = 0; d<nbDimensions; d++) {
+        for (int i = 0; i < nbLandmarks; i++) {
+            for (int d = 0; d < nbDimensions; d++) {
                 fPts[d][i] = fixed_pts.get(i).getDoublePosition(d);
                 //System.out.println("fPts["+d+"]["+i+"]=" +fPts[d][i]);
             }
-            for (int d = 0; d<nbDimensions; d++) {
+            for (int d = 0; d < nbDimensions; d++) {
                 mPts[d][i] = moving_pts.get(i).getDoublePosition(d);
                 //System.out.println("mPts["+d+"]["+i+"]=" +mPts[d][i]);
             }
@@ -220,7 +261,7 @@ public class TransformHelper {
      * Gets an imglib2 realtransform object and returned the equivalent
      * JTS {@link CoordinateSequenceFilter} operation which can be applied to
      * {@link Geometry}.
-     *
+     * <p>
      * The 3rd dimension is ignored.
      *
      * @param rt imglib2 realtransform object
@@ -231,9 +272,9 @@ public class TransformHelper {
             @Override
             public void filter(CoordinateSequence seq, int i) {
                 RealPoint pt = new RealPoint(3);
-                pt.setPosition(seq.getOrdinate(i, 0),0);
-                pt.setPosition(seq.getOrdinate(i, 1),1);
-                rt.apply(pt,pt);
+                pt.setPosition(seq.getOrdinate(i, 0), 0);
+                pt.setPosition(seq.getOrdinate(i, 1), 1);
+                rt.apply(pt, pt);
                 seq.setOrdinate(i, 0, pt.getDoublePosition(0));
                 seq.setOrdinate(i, 1, pt.getDoublePosition(1));
             }
