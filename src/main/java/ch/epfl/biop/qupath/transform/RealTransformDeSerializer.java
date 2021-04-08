@@ -123,7 +123,6 @@ public class RealTransformDeSerializer {
                 // TODO : see if autowrapping works ?
                 return null;
             }
-
             return new Wrapped2DTransformAs3D((InvertibleRealTransform) rt);
         }
 
@@ -144,7 +143,10 @@ public class RealTransformDeSerializer {
         public WrappedIterativeInvertibleRealTransform deserialize(JsonElement jsonElement, Type type, JsonDeserializationContext jsonDeserializationContext) throws JsonParseException {
             JsonObject obj = jsonElement.getAsJsonObject();
             RealTransform rt = jsonDeserializationContext.deserialize(obj.get("wrappedTransform"), RealTransform.class);
-            return new WrappedIterativeInvertibleRealTransform<>(rt);
+            WrappedIterativeInvertibleRealTransform ixfm = new WrappedIterativeInvertibleRealTransform<>(rt);
+            ixfm.getOptimzer().setTolerance( 0.000001 );   // keeps running until error is < 0.000001
+            ixfm.getOptimzer().setMaxIters( 1000 ); // or 1000 iterations
+            return ixfm;
         }
 
         @Override

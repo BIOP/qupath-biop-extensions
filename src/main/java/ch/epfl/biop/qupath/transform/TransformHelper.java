@@ -1,6 +1,8 @@
 package ch.epfl.biop.qupath.transform;
 
 import net.imglib2.RealPoint;
+import net.imglib2.realtransform.InvertibleRealTransform;
+import net.imglib2.realtransform.InvertibleRealTransformSequence;
 import net.imglib2.realtransform.RealTransform;
 import net.imglib2.realtransform.ThinplateSplineTransform;
 import org.locationtech.jts.geom.CoordinateSequence;
@@ -48,7 +50,7 @@ import static qupath.lib.scripting.QP.fireHierarchyUpdate;
 import ch.epfl.biop.qupath.transform.TransformHelper
 def imageData = getCurrentImageData()
 // Transfer all matching annotations and detections, keep hierarchy, and transfer measurements (true flag)
-TransformHelper.transferMatchingAnnotationsToImage(imageData, true)
+TransformHelper.transferMatchingAnnotationsToImage(imageData, true, true)
 // Computes all intensity measurements in the new image
 TransformHelper.addIntensityMeasurements(getAnnotationObjects(), getCurrentServer(), 1, true)
 
@@ -79,11 +81,10 @@ public class TransformHelper {
      * @param copyMeasurements
      * @throws Exception
      */
-    public static void transferMatchingAnnotationsToImage(ImageData targetImageData, boolean copyMeasurements) throws Exception {
+    public static void transferMatchingAnnotationsToImage(ImageData targetImageData, boolean copyMeasurements, boolean allowInverse) throws Exception {
         // Find in project the source data that has annotations/detections AND a Serialized RealTransform in the
         List<ProjectImageEntry<BufferedImage>> entries = QP.getProject().getImageList();
         ProjectImageEntry targetEntry = QP.getProject().getEntry(targetImageData);
-
 
         String targetID = targetEntry.getID();
 
@@ -91,11 +92,31 @@ public class TransformHelper {
         Path targetEntryPath = targetEntry.getEntryPath();
         List<Path> candidateTransformPaths = Files.list(targetEntryPath).filter(path -> {
             Matcher matcher = transformFilePattern.matcher(path.getFileName().toString());
-            if (matcher.matches())
-                // check that the target is our current ID
+            if (matcher.matches()) {
                 return matcher.group("target").equals(targetID);
+            }
             return false;
         }).collect(Collectors.toList());
+
+        // If invertible transform are allowed, we need to check through all entries
+        if (allowInverse) {
+            entries.forEach(entry -> {
+                if (!entry.equals(targetEntry)) {
+                    try {
+                        List<Path> candidateTransformPathsInEntry = Files.list(entry.getEntryPath()).filter(path -> {
+                            Matcher matcher = transformFilePattern.matcher(path.getFileName().toString());
+                            if (matcher.matches()) {
+                                return matcher.group("source").equals(targetID);
+                            }
+                            return false;
+                        }).collect(Collectors.toList());
+                        candidateTransformPaths.addAll(candidateTransformPathsInEntry);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+        }
 
         // If the list of Paths is not empty, then we have candidates, yay!
         logger.info("Found {} candidate transforms for image {}", candidateTransformPaths.size(), targetEntry.getImageName());
@@ -105,16 +126,46 @@ public class TransformHelper {
 
         List<ProjectImageEntry> candidateSourceEntries = new ArrayList<>();
         List<Path> finalCandidateTransformPaths = new ArrayList<>();
+        List<Boolean> candidateIsInverse = new ArrayList<>(); // Keep track if the candidate is an inverse transform or not
         for (Path path : candidateTransformPaths) {
             Matcher matcher = transformFilePattern.matcher(path.getFileName().toString());
             if (matcher.matches()) {
-                String sourceID = matcher.group("source");
-                Optional<ProjectImageEntry<BufferedImage>> potentialEntry = entries.stream().filter(entry -> entry.getID().equals(sourceID)).findFirst();
-                if (potentialEntry.isPresent()) {
-                    candidateSourceEntries.add(potentialEntry.get());
-                    finalCandidateTransformPaths.add(path);
+                if (allowInverse) {
+                    // Inverse are allowed
+                    if (matcher.group("target").equals(targetID)) {
+                        // Normal way, inverse not necessary
+                        String sourceID = matcher.group("source");
+                        Optional<ProjectImageEntry<BufferedImage>> potentialEntry = entries.stream().filter(entry -> entry.getID().equals(sourceID)).findFirst();
+                        if (potentialEntry.isPresent()) {
+                            candidateSourceEntries.add(potentialEntry.get());
+                            finalCandidateTransformPaths.add(path);
+                            candidateIsInverse.add(false);
+                        } else {
+                            logger.info("No Entries with ID {} in project", sourceID);
+                        }
+                    } else {
+                        assert matcher.group("source").equals(targetID);
+                        // Inverse way
+                        String sourceID = matcher.group("target");
+                        Optional<ProjectImageEntry<BufferedImage>> potentialEntry = entries.stream().filter(entry -> entry.getID().equals(sourceID)).findFirst();
+                        if (potentialEntry.isPresent()) {
+                            candidateSourceEntries.add(potentialEntry.get());
+                            finalCandidateTransformPaths.add(path);
+                            candidateIsInverse.add(true);
+                        } else {
+                            logger.info("No Entries with ID {} in project", sourceID);
+                        }
+                    }
                 } else {
-                    logger.info("No Entries with ID {} in project", sourceID);
+                    String sourceID = matcher.group("source");
+                    Optional<ProjectImageEntry<BufferedImage>> potentialEntry = entries.stream().filter(entry -> entry.getID().equals(sourceID)).findFirst();
+                    if (potentialEntry.isPresent()) {
+                        candidateSourceEntries.add(potentialEntry.get());
+                        finalCandidateTransformPaths.add(path);
+                        candidateIsInverse.add(false);
+                    } else {
+                        logger.info("No Entries with ID {} in project", sourceID);
+                    }
                 }
             }
         }
@@ -129,12 +180,21 @@ public class TransformHelper {
 
         ProjectImageEntry sourceEntry = candidateSourceEntries.get(0);
         Path sourceTransformPath = finalCandidateTransformPaths.get(0);
+        Boolean isInverse = candidateIsInverse.get(0);
         // Get the hierarchy of the source
         PathObjectHierarchy sourceHierarchy = sourceEntry.readHierarchy();
         PathObjectHierarchy targetHierarchy = targetImageData.getHierarchy();//.readHierarchy();
 
         // Rebuild
         RealTransform rt = TransformHelper.getRealTransform(sourceTransformPath.toFile());
+
+        if (isInverse) {
+            if (rt instanceof InvertibleRealTransform) {
+                rt = ((InvertibleRealTransform) rt).inverse();
+            } else {
+                throw new UnsupportedOperationException("Candidate transform is not invertible");
+            }
+        }
 
         // Makes JTS transformer
         CoordinateSequenceFilter transformer = TransformHelper.getJTSFilter(rt);
