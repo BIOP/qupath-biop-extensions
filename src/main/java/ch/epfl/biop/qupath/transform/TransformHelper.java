@@ -8,8 +8,10 @@ import org.locationtech.jts.geom.CoordinateSequenceFilter;
 import org.locationtech.jts.geom.Geometry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import qupath.lib.analysis.features.ObjectMeasurements;
 import qupath.lib.gui.QuPathApp;
 import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageServer;
 import qupath.lib.objects.*;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.projects.ProjectImageEntry;
@@ -23,9 +25,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -43,6 +43,17 @@ import static qupath.lib.scripting.QP.fireHierarchyUpdate;
  * @author Olivier Burri, EPFL, 2021
  */
 
+/* // Script to automate transfer of annotations and detections as well as measurements:
+
+import ch.epfl.biop.qupath.transform.TransformHelper
+def imageData = getCurrentImageData()
+// Transfer all matching annotations and detections, keep hierarchy, and transfer measurements (true flag)
+TransformHelper.transferMatchingAnnotationsToImage(imageData, true)
+// Computes all intensity measurements in the new image
+TransformHelper.addIntensityMeasurements(getAnnotationObjects(), getCurrentServer(), 1, true)
+
+ */
+
 public class TransformHelper {
 
     final private static Logger logger = LoggerFactory.getLogger(TransformHelper.class);
@@ -57,8 +68,8 @@ public class TransformHelper {
      * @throws Exception
      */
     public static void main(String... args) throws Exception {
-        String projectPath = "\\\\svfas6.epfl.ch\\biop\\public\\luisa.spisak_UPHUELSKEN\\Overlay\\qp\\project.qpproj";
-        QuPathApp.launch(QuPathApp.class, projectPath);
+        //String projectPath = "\\\\svfas6.epfl.ch\\biop\\public\\luisa.spisak_UPHUELSKEN\\Overlay\\qp\\project.qpproj";
+        QuPathApp.launch(QuPathApp.class);//, projectPath);
     }
 
     /**
@@ -120,7 +131,7 @@ public class TransformHelper {
         Path sourceTransformPath = finalCandidateTransformPaths.get(0);
         // Get the hierarchy of the source
         PathObjectHierarchy sourceHierarchy = sourceEntry.readHierarchy();
-        PathObjectHierarchy targetHierarchy = targetEntry.readHierarchy();
+        PathObjectHierarchy targetHierarchy = targetImageData.getHierarchy();//.readHierarchy();
 
         // Rebuild
         RealTransform rt = TransformHelper.getRealTransform(sourceTransformPath.toFile());
@@ -134,12 +145,35 @@ public class TransformHelper {
         for (PathObject o : sourceHierarchy.getRootObject().getChildObjects()) {
             transformedObjects.add(TransformHelper.transformPathObjectAndChildren(o, transformer, true, copyMeasurements));
         }
+
         targetHierarchy.addPathObjects(transformedObjects);
 
         targetImageData.getHierarchy().setHierarchy(targetHierarchy);
-        targetEntry.saveImageData(targetImageData);
 
         fireHierarchyUpdate();
+    }
+
+    /**
+     * Add the standard measurements to the newly created path objects
+     * @param objects
+     * @param server
+     * @param downsample
+     * @param measureChildren
+     * @throws Exception
+     */
+    public static void addIntensityMeasurements(Collection<PathObject> objects, ImageServer<BufferedImage> server, double downsample, boolean measureChildren) throws Exception{
+
+        List<ObjectMeasurements.Measurements> measurements = Arrays.asList(ObjectMeasurements.Measurements.values());// as List
+        List<ObjectMeasurements.Compartments> compartments = Arrays.asList(ObjectMeasurements.Compartments.values());// as List // Won't mean much if they aren't cells...
+
+        for (PathObject object : objects) {
+            if (object instanceof PathDetectionObject) {
+                ObjectMeasurements.addIntensityMeasurements(server, object, downsample, measurements, compartments);
+            }
+            if (measureChildren) {
+                addIntensityMeasurements(object.getChildObjects(), server, downsample, true);
+            }
+        }
     }
 
     /**
@@ -190,7 +224,6 @@ public class TransformHelper {
         // TODO comment a bit more
         ROI transformed_roi = GeometryTools.geometryToROI(geometry, original_roi.getImagePlane());
 
-
         PathObject transformedObject;
         if (object instanceof PathAnnotationObject) {
             transformedObject = PathObjects.createAnnotationObject(transformed_roi, object.getPathClass(), copyMeasurements ? object.getMeasurementList() : null);
@@ -206,6 +239,7 @@ public class TransformHelper {
             });
             ROI transformed_nuc_roi = GeometryTools.geometryToROI(nuc_geometry, original_roi.getImagePlane());
             transformedObject = PathObjects.createCellObject(transformed_roi, transformed_nuc_roi, object.getPathClass(), copyMeasurements ? object.getMeasurementList() : null);
+
         } else if (object instanceof PathDetectionObject) {
             transformedObject = PathObjects.createDetectionObject(transformed_roi, object.getPathClass(), copyMeasurements ? object.getMeasurementList() : null);
         } else {
