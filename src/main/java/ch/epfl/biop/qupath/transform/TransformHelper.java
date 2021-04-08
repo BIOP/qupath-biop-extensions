@@ -2,7 +2,6 @@ package ch.epfl.biop.qupath.transform;
 
 import net.imglib2.RealPoint;
 import net.imglib2.realtransform.InvertibleRealTransform;
-import net.imglib2.realtransform.InvertibleRealTransformSequence;
 import net.imglib2.realtransform.RealTransform;
 import net.imglib2.realtransform.ThinplateSplineTransform;
 import org.locationtech.jts.geom.CoordinateSequence;
@@ -41,19 +40,26 @@ import static qupath.lib.scripting.QP.fireHierarchyUpdate;
  * See initial forum thread : https://forum.image.sc/t/qupath-arbitrarily-transform-detections-and-annotations/49674
  * For documentation regarding this tool, see https://c4science.ch/w/bioimaging_and_optics_platform_biop/image-processing/wsi_registration_fjii_qupath/
  *
+ * Extra dependencies required for QuPath:
+ *
+ * \--- net.imglib2:imglib2-realtransform:3.1.1
+ *      +--- net.imglib2:imglib2:5.10.0
+ *      +--- gov.nist.math:jama:1.0.3
+ *      \--- jitk:jitk-tps:3.0.1
+ *           +--- com.googlecode.efficient-java-matrix-library:ejml:0.24
+ *           \--- log4j:log4j:1.2.17
+ *
  * @author Nicolas Chiaruttini, EPFL, 2021
  * @author Olivier Burri, EPFL, 2021
  */
 
 /* // Script to automate transfer of annotations and detections as well as measurements:
-
 import ch.epfl.biop.qupath.transform.TransformHelper
 def imageData = getCurrentImageData()
 // Transfer all matching annotations and detections, keep hierarchy, and transfer measurements (true flag)
 TransformHelper.transferMatchingAnnotationsToImage(imageData, true, true)
 // Computes all intensity measurements in the new image
 TransformHelper.addIntensityMeasurements(getAnnotationObjects(), getCurrentServer(), 1, true)
-
  */
 
 public class TransformHelper {
