@@ -60,6 +60,14 @@ def imageData = getCurrentImageData()
 TransformHelper.transferMatchingAnnotationsToImage(imageData, true, true)
 // Computes all intensity measurements in the new image
 TransformHelper.addIntensityMeasurements(getAnnotationObjects(), getCurrentServer(), 1, true)
+
+If the image is RGB, this line can be added to import the correct measurements (DAB, etc.) :
+
+server = new qupath.lib.images.servers.TransformedServerBuilder(getCurrentServer())
+      .deconvolveStains(getCurrentImageData().getColorDeconvolutionStains(), 1, 2)
+      .build()
+
+cf https://forum.image.sc/t/transferring-segmentation-predictions-from-custom-masks-to-qupath/43408/15
  */
 
 public class TransformHelper {
