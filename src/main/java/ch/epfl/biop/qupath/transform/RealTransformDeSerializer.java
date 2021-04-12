@@ -2,6 +2,7 @@ package ch.epfl.biop.qupath.transform;
 
 import com.google.gson.*;
 import jitk.spline.ThinPlateR2LogRSplineKernelTransform;
+import net.imglib2.FinalRealInterval;
 import net.imglib2.realtransform.*;
 import net.imglib2.realtransform.inverse.WrappedIterativeInvertibleRealTransform;
 
@@ -27,6 +28,7 @@ public class RealTransformDeSerializer {
         factoryRealTransform.registerSubtype(WrappedIterativeInvertibleRealTransform.class);
         factoryRealTransform.registerSubtype(RealTransformSequence.class);
         factoryRealTransform.registerSubtype(InvertibleRealTransformSequence.class);
+        factoryRealTransform.registerSubtype(BoundedRealTransform.class);
 
         builder.registerTypeAdapterFactory(factoryRealTransform);
         builder.registerTypeHierarchyAdapter(ThinplateSplineTransform.class, new ThinPlateSplineTransformAdapter());
@@ -34,6 +36,7 @@ public class RealTransformDeSerializer {
         builder.registerTypeHierarchyAdapter(WrappedIterativeInvertibleRealTransform.class, new WrappedIterativeInvertibleRealTransformAdapter());
         builder.registerTypeHierarchyAdapter(RealTransformSequence.class, new RealTransformSequenceAdapter());
         builder.registerTypeHierarchyAdapter(InvertibleRealTransformSequence.class, new InvertibleRealTransformSequenceAdapter());
+        builder.registerTypeHierarchyAdapter(BoundedRealTransform.class, new BoundedRealTransformAdapter());
 
         return builder.create();
     }
@@ -131,6 +134,48 @@ public class RealTransformDeSerializer {
             JsonObject obj = new JsonObject();
             obj.addProperty("type", Wrapped2DTransformAs3D.class.getSimpleName());
             obj.add("wrappedTransform", jsonSerializationContext.serialize(wrapped2DTransformAs3D.getTransform()));
+            return obj;
+        }
+
+    }
+
+    public static class BoundedRealTransformAdapter implements JsonSerializer<BoundedRealTransform>,
+            JsonDeserializer<BoundedRealTransform> {
+
+        @Override
+        public BoundedRealTransform deserialize(JsonElement jsonElement, Type type, JsonDeserializationContext jsonDeserializationContext) throws JsonParseException {
+            JsonObject obj = jsonElement.getAsJsonObject();
+
+            RealTransform rt = jsonDeserializationContext.deserialize(obj.get("realTransform"), RealTransform.class);
+
+            if (!(rt instanceof InvertibleRealTransform)) {
+                System.err.println("Error during deserialization of BoundedRealTransform : The serialized transform is not invertible");
+                return null;
+            }
+
+            double[] min = jsonDeserializationContext.deserialize(obj.get("interval_min"), double[].class);
+
+            double[] max = jsonDeserializationContext.deserialize(obj.get("interval_max"), double[].class);
+
+            FinalRealInterval fri = new FinalRealInterval(min, max);
+
+            return new BoundedRealTransform((InvertibleRealTransform) rt, fri);
+        }
+
+        @Override
+        public JsonElement serialize(BoundedRealTransform brt, Type type, JsonSerializationContext jsonSerializationContext) {
+            JsonObject obj = new JsonObject();
+
+            obj.addProperty("type", BoundedRealTransform.class.getSimpleName());
+
+            FinalRealInterval fri = new FinalRealInterval(brt.getInterval());
+
+            obj.add("realTransform", jsonSerializationContext.serialize(brt.getTransform()));
+
+            obj.add("interval_min", jsonSerializationContext.serialize(fri.minAsDoubleArray()));
+
+            obj.add("interval_max", jsonSerializationContext.serialize(fri.maxAsDoubleArray()));
+
             return obj;
         }
 
