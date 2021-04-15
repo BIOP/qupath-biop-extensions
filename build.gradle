@@ -8,7 +8,7 @@ javadoc {
 }
 
 group 'ch.epfl.biop.qupath'
-version '2.0.5'
+version '2.0.7'
 description = 'qupath-biop-extension'
 
 
