@@ -16,17 +16,15 @@ if (!fTransform.exists()) {
     return ;
 }
 
-def pixelToCCFTransform = Warpy.getRealTransform(fTransform);
+def pixelToCCFTransform = Warpy.getRealTransform(fTransform).inverse();
 
-//def parent = getSelectedObject()
-//parent.
 getDetectionObjects().forEach(detection -> {
     RealPoint ccfCoordinates = new RealPoint(3);
     MeasurementList ml = detection.getMeasurementList();
-    ccfCoordinates.setPosition([ml.getMeasurementValue(),ml.getMeasurementValue(),0] as double[]);
+    ccfCoordinates.setPosition([detection.getROI().getCentroidX(),detection.getROI().getCentroidY(),0] as double[]);
     pixelToCCFTransform.apply(ccfCoordinates, ccfCoordinates);
-    ml.addMeasurement("CCFx", ccfCoordinates.getDoublePosition(0))
-    ml.addMeasurement("CCFy", ccfCoordinates.getDoublePosition(1))
-    ml.addMeasurement("CCFz", ccfCoordinates.getDoublePosition(2))
+    ml.addMeasurement("CCFx", ccfCoordinates.getDoublePosition(0) )
+    ml.addMeasurement("CCFy", ccfCoordinates.getDoublePosition(1) )
+    ml.addMeasurement("CCFz", ccfCoordinates.getDoublePosition(2) )
 })
 
