@@ -29,8 +29,8 @@ getDetectionObjects().forEach(detection -> {
     MeasurementList ml = detection.getMeasurementList();
     ccfCoordinates.setPosition([detection.getROI().getCentroidX(),detection.getROI().getCentroidY(),0] as double[]);
     pixelToCCFTransform.apply(ccfCoordinates, ccfCoordinates);
-    ml.addMeasurement("CCFx", ccfCoordinates.getDoublePosition(0) )
-    ml.addMeasurement("CCFy", ccfCoordinates.getDoublePosition(1) )
-    ml.addMeasurement("CCFz", ccfCoordinates.getDoublePosition(2) )
+    ml.addMeasurement("Allen CCFv3 X mm", ccfCoordinates.getDoublePosition(0) )
+    ml.addMeasurement("Allen CCFv3 Y mm", ccfCoordinates.getDoublePosition(1) )
+    ml.addMeasurement("Allen CCFv3 Z mm", ccfCoordinates.getDoublePosition(2) )
 })
 
