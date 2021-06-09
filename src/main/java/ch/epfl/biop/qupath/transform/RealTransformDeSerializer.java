@@ -319,4 +319,31 @@ public class RealTransformDeSerializer {
         }*/
     }
 
+    /**
+     * Removes the bound - BoundedRealTransform exists just for optimising the display of Warped Sources in ABBA
+     */
+    public static class BoundedRealTransformAdapter implements //JsonSerializer<RealTransformSequence>,
+            JsonDeserializer<RealTransform> {
+        @Override
+        public RealTransform deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            JsonObject obj = json.getAsJsonObject();
+
+            RealTransform rt = context.deserialize(obj.get("realTransform"), RealTransform.class);
+
+            return rt;
+
+            /*if (!(rt instanceof InvertibleRealTransform)) {
+                System.err.println("Error during deserialization of BoundedRealTransform : The serialized transform is not invertible");
+                return null;
+            }
+
+            double[] min = jsonDeserializationContext.deserialize(obj.get("interval_min"), double[].class);
+
+            double[] max = jsonDeserializationContext.deserialize(obj.get("interval_max"), double[].class);
+
+            FinalRealInterval fri = new FinalRealInterval(min, max);
+
+            return new BoundedRealTransform((InvertibleRealTransform) rt, fri);*/
+        }
+    }
 }
