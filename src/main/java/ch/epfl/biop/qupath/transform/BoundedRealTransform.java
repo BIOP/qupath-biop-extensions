@@ -83,4 +83,3 @@ public class BoundedRealTransform implements InvertibleRealTransform {
     }
 
 }
-
