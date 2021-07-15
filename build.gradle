@@ -46,7 +46,15 @@ dependencies {
     implementation group: 'qupath', name: 'qupath-core-processing'
     implementation 'net.imagej:ij:1.52s'
     implementation 'net.imglib2:imglib2-realtransform:3.1.1'
-   // implementation 'com.opencsv:opencsv:5.2'
+
+    // Add dependencies for OMERO Server
+    implementation 'com.zeroc:glacier2:3.6.5'
+    implementation 'com.zeroc:ice:3.6.5'
+    implementation 'org.openmicroscopy:ome-xml:6.1.0'
+    implementation 'org.openmicroscopy:omero-blitz:5.5.8'
+    implementation 'org.openmicroscopy:omero-gateway:5.6.5'
+    implementation 'org.openmicroscopy:omero-model:5.6.0'
+    implementation 'info.picocli:picocli:4.3.2'
 
     compile group: 'org.controlsfx', name: 'controlsfx', version: '11.0.1'
     compile group: 'org.slf4j', name: 'log4j-over-slf4j', version: '1.7.30'
