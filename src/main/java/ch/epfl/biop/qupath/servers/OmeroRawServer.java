@@ -28,17 +28,18 @@ import loci.common.services.DependencyException;
 import loci.common.services.ServiceException;
 import loci.formats.*;
 import loci.formats.gui.AWTImageTools;
-import loci.formats.in.DynamicMetadataOptions;
-import loci.formats.in.MetadataOptions;
-import loci.formats.meta.DummyMetadata;
 import loci.formats.meta.IMetadata;
 import loci.formats.meta.MetadataStore;
 import loci.formats.ome.OMEPyramidStore;
 import loci.formats.ome.OMEXMLMetadata;
 import ome.units.UNITS;
 import ome.units.quantity.Length;
+import omero.ServerError;
+import omero.api.IMetadataPrx;
+import omero.api.RawPixelsStorePrx;
 import omero.gateway.Gateway;
 import omero.gateway.SecurityContext;
+import omero.gateway.exception.DSOutOfServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -61,8 +62,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -122,7 +121,7 @@ public class OmeroRawServer extends AbstractTileableImageServer {
     /**
      * Path to the base image file - will be the same as path, unless the path encodes the name of a specific series, in which case this refers to the file without the series included
      */
-    private String filePath;
+    private Long pixels_id;
 
     /**
      * A map linking an identifier (image name) to series number for 'full' images.
@@ -202,8 +201,8 @@ public class OmeroRawServer extends AbstractTileableImageServer {
         this(uri, OmeroRawServerOptions.getInstance(), args);
     }
 
-
-    OmeroRawServer(URI uri, final OmeroRawServerOptions options, String...args) throws FormatException, IOException, DependencyException, ServiceException, URISyntaxException {
+// TODO START HERE Again
+    OmeroRawServer(Long imageID, final OmeroRawServerOptions options, String...args) throws FormatException, IOException, DependencyException, ServiceException, URISyntaxException, ServerError, DSOutOfServiceException {
         super();
 
         long startTime = System.currentTimeMillis();
@@ -248,11 +247,11 @@ public class OmeroRawServer extends AbstractTileableImageServer {
             requestedSeriesName = null;
 
         // This appears to work more reliably than converting to a File
-        filePath = Paths.get(uri).toString();
+        pixels_id = Paths.get(uri).toString();
 
         // Create a reader & extract the metadata
-        readerWrapper = manager.getPrimaryReaderWrapper(options, filePath, readerOptions);
-        IFormatReader reader = readerWrapper.getReader();
+        readerWrapper = manager.getPrimaryReaderWrapper(options, pixels_id, readerOptions);
+        RawPixelsStorePrx reader = readerWrapper.getReader();
         meta = (OMEPyramidStore)reader.getMetadataStore();
 
         // Populate the image server list if we have more than one image
@@ -730,7 +729,7 @@ public class OmeroRawServer extends AbstractTileableImageServer {
      * @return
      */
     public boolean willParallelize() {
-        return options.requestParallelization() && (getWidth() > getPreferredTileWidth() || getHeight() > getPreferredTileHeight()) && manager.getMemoizationFileSize(filePath) <= MAX_PARALLELIZATION_MEMO_SIZE;
+        return options.requestParallelization();
     }
 
     int getPreferredTileWidth() {
@@ -749,10 +748,10 @@ public class OmeroRawServer extends AbstractTileableImageServer {
      *
      * @return
      */
-    private IFormatReader getReader() {
+    private RawPixelsStorePrx getReader() {
         try {
             if (willParallelize())
-                return manager.getReaderForThread(options, filePath, readerOptions);
+                return manager.getReaderForThread(options, pixels_id, readerOptions);
             else
                 return readerWrapper.getReader();
         } catch (Exception e) {
@@ -785,9 +784,10 @@ public class OmeroRawServer extends AbstractTileableImageServer {
         int z = tileRequest.getZ();
         int t = tileRequest.getT();
 
-        IFormatReader ipReader = getReader();
-        if (ipReader == null) {
-            throw new IOException("Reader is null - was the image already closed? " + filePath);
+
+        RawPixelsStorePrx rawPixelsStore = getReader();
+        if (rawPixelsStore == null) {
+            throw new IOException("Reader is null - was the image already closed? " + pixels_id);
         }
 
         // Check if this is non-zero
@@ -803,38 +803,34 @@ public class OmeroRawServer extends AbstractTileableImageServer {
         boolean interleaved;
         int pixelType;
         boolean normalizeFloats = false;
+        try {
+        synchronized(rawPixelsStore) {
 
-        synchronized(ipReader) {
-            ipReader.setSeries(series);
-            ipReader.setResolution(level);
-            order = ipReader.isLittleEndian() ? ByteOrder.LITTLE_ENDIAN : ByteOrder.BIG_ENDIAN;
-            interleaved = ipReader.isInterleaved();
-            pixelType = ipReader.getPixelType();
-            normalizeFloats = ipReader.isNormalized();
+                rawPixelsStore.setResolutionLevel(level);
 
-            // Single-channel & RGB images are straightforward... nothing more to do
-            if ((ipReader.isRGB() && isRGB()) || nChannels() == 1) {
+            order = ByteOrder.BIG_ENDIAN; // ByteOrder.LITTLE_ENDIAN
+            interleaved = false;
+            pixelType = FormatTools.UINT8;
+            normalizeFloats = false;
+
+            // Single-channel
+            if (nChannels() == 1) {
                 // Read the image - or at least the first channel
-                int ind = ipReader.getIndex(z, 0, t);
-                try {
-                    byte[] bytesSimple = ipReader.openBytes(ind, tileX, tileY, tileWidth, tileHeight);
-                    return AWTImageTools.openImage(bytesSimple, ipReader, tileWidth, tileHeight);
-                } catch (Exception e) {
-                    logger.error("Error opening image " + ind + " for " + tileRequest.getRegionRequest(), e);
-                }
+
+                byte[] bytesSimple = rawPixelsStore.getTile(z, 0, t, tileX, tileY, tileWidth, tileHeight);
+                return AWTImageTools.makeImage(bytesSimple, tileWidth, tileHeight, 1, interleaved, 1, false, false, false );
+
+
             }
             // Read bytes for all the required channels
-            effectiveC = ipReader.getEffectiveSizeC();
+            effectiveC = 1; // TODO find a way to get the channel size
             bytes = new byte[effectiveC][];
-            try {
-                for (int c = 0; c < effectiveC; c++) {
-                    int ind = ipReader.getIndex(z, c, t);
-                    bytes[c] = ipReader.openBytes(ind, tileX, tileY, tileWidth, tileHeight);
-                    length = bytes[c].length;
-                }
-            } catch (FormatException e) {
-                throw new IOException(e);
+
+            for (int c = 0; c < effectiveC; c++) {
+                bytes[c] = rawPixelsStore.getTile(z, c, t, tileX, tileY, tileWidth, tileHeight);
+                length = bytes[c].length;
             }
+
         }
 
         DataBuffer dataBuffer;
@@ -925,6 +921,11 @@ public class OmeroRawServer extends AbstractTileableImageServer {
 
         WritableRaster raster = WritableRaster.createWritableRaster(sampleModel, dataBuffer, null);
         return new BufferedImage(colorModel, raster, false, null);
+
+        } catch (ServerError serverError) {
+            serverError.printStackTrace();
+            return null;
+        }
     }
 
 
@@ -975,38 +976,7 @@ public class OmeroRawServer extends AbstractTileableImageServer {
 
     @Override
     public BufferedImage getAssociatedImage(String name) {
-        if (associatedImageMap == null || !associatedImageMap.containsKey(name))
-            throw new IllegalArgumentException("No associated image with name '" + name + "' for " + getPath());
-        IFormatReader reader = getReader();
-        synchronized (reader) {
-            int series = reader.getSeries();
-            try {
-                reader.setSeries(associatedImageMap.get(name));
-                int nResolutions = reader.getResolutionCount();
-                if (nResolutions > 0) {
-                    reader.setResolution(0);
-                }
-                // TODO: Handle color transforms here, or in the display of labels/macro images - in case this isn't RGB
-                byte[] bytesSimple = reader.openBytes(reader.getIndex(0, 0, 0));
-                return AWTImageTools.openImage(bytesSimple, reader, reader.getSizeX(), reader.getSizeY());
-//				return AWTImageTools.autoscale(img);
-            } catch (Exception e) {
-                logger.error("Error reading associated image" + name, e);
-            } finally {
-                reader.setSeries(series);
-            }
-        }
-        return null;
-    }
-
-
-    /**
-     * Get the underlying file.
-     *
-     * @return
-     */
-    public File getFile() {
-        return filePath == null ? null : new File(filePath);
+        throw new IllegalArgumentException("No associated image with name '" + name + "' for " + getPath());
     }
 
 
@@ -1020,35 +990,6 @@ public class OmeroRawServer extends AbstractTileableImageServer {
         return originalMetadata;
     }
 
-    /**
-     * Get the class name of the first reader that potentially supports the file type, or null if no reader can be found.
-     * <p>
-     * This method only uses the path and file extensions, generously returning the first potential
-     * reader based on the extension. Its purpose is to help filter out hopeless cases, not to establish
-     * the 'correct' reader.
-     *
-     * @param path
-     * @return
-     * @throws InstantiationException
-     * @throws IllegalAccessException
-     * @throws IllegalArgumentException
-     * @throws InvocationTargetException
-     * @throws NoSuchMethodException
-     * @throws SecurityException
-     */
-    static String getSupportedReaderClass(String path) throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException, NoSuchMethodException, SecurityException {
-        path = path.toLowerCase();
-        for (var cls : ImageReader.getDefaultReaderClasses().getClasses()) {
-            var reader = cls.getConstructor().newInstance();
-            if (reader.isThisType(path, false))
-                return cls.getName();
-            for (String s : reader.getSuffixes()) {
-                if (s != null && !s.isBlank() && path.endsWith(s.toLowerCase()))
-                    return cls.getName();
-            }
-        }
-        return null;
-    }
 
 
     /**
@@ -1106,7 +1047,6 @@ public class OmeroRawServer extends AbstractTileableImageServer {
          * Note that the state of the reader is not specified; setSeries should be called before use.
          *
          * @param options
-         * @param path
          * @param readerOptions
          * @return
          * @throws DependencyException
@@ -1114,21 +1054,21 @@ public class OmeroRawServer extends AbstractTileableImageServer {
          * @throws FormatException
          * @throws IOException
          */
-        public synchronized IFormatReader getReaderForThread(final OmeroRawServerOptions options, final String path, Map<String, String> readerOptions) throws DependencyException, ServiceException, FormatException, IOException {
+        public synchronized RawPixelsStorePrx getReaderForThread(final OmeroRawServerOptions options, final Long pixelsId, Map<String, String> readerOptions) throws FormatException, IOException, ServerError, DSOutOfServiceException {
 
             LocalReaderWrapper wrapper = localReader.get();
 
             // Check if we already have the correct reader
-            IFormatReader reader = wrapper == null ? null : wrapper.getReader();
+            RawPixelsStorePrx reader = wrapper == null ? null : wrapper.getReader();
             if (reader != null) {
-                if (path.equals(reader.getCurrentFile()) && wrapper.argsMatch(readerOptions))
+                if (pixelsId.equals(wrapper.reader.getPixelsId()) && wrapper.argsMatch(readerOptions))
                     return reader;
                 else
-                    reader.close(false);
+                    reader.close();
             }
 
             // Create a new reader
-            reader = createReader(options, path, null, readerOptions);
+            reader = createReader(options, pixelsId, null, readerOptions);
 
             // Store wrapped reference with associated cleaner
             wrapper = wrapReader(reader, readerOptions);
@@ -1138,7 +1078,7 @@ public class OmeroRawServer extends AbstractTileableImageServer {
         }
 
 
-        private static LocalReaderWrapper wrapReader(IFormatReader reader, Map<String, String> readerOptions) {
+        private static LocalReaderWrapper wrapReader(RawPixelsStorePrx reader, Map<String, String> readerOptions) {
             LocalReaderWrapper wrapper = new LocalReaderWrapper(reader, readerOptions);
             logger.debug("Constructing reader for {}", Thread.currentThread());
             cleaner.register(
@@ -1157,15 +1097,15 @@ public class OmeroRawServer extends AbstractTileableImageServer {
          * Note that the state of the reader is not specified; setSeries should be called before use.
          *
          * @param options
-         * @param path
+         * @param pixelsID
          * @return
          * @throws DependencyException
          * @throws ServiceException
          * @throws FormatException
          * @throws IOException
          */
-        synchronized IFormatReader createPrimaryReader(final OmeroRawServerOptions options, final String path, IMetadata metadata, Map<String, String> readerOptions) throws DependencyException, ServiceException, FormatException, IOException {
-            return createReader(options, path, metadata == null ? MetadataTools.createOMEXMLMetadata() : metadata, readerOptions);
+        synchronized RawPixelsStorePrx createPrimaryReader(final OmeroRawServerOptions options, final Long pixelsID, IMetadata metadata, Map<String, String> readerOptions) throws DependencyException, ServiceException, FormatException, IOException, ServerError, DSOutOfServiceException {
+            return createReader(options, pixelsID, metadata == null ? MetadataTools.createOMEXMLMetadata() : metadata, readerOptions);
         }
 
 
@@ -1173,37 +1113,24 @@ public class OmeroRawServer extends AbstractTileableImageServer {
          * Get a wrapper for the primary reader for a particular path. This can be reused across ImageServers, but
          * one must be careful to synchronize the actual use of the reader.
          * @param options
-         * @param path
+         * @param pixelsID
          * @return
          * @throws DependencyException
          * @throws ServiceException
          * @throws FormatException
          * @throws IOException
          */
-        synchronized LocalReaderWrapper getPrimaryReaderWrapper(final OmeroRawServerOptions options, final String path, Map<String, String> readerOptions) throws DependencyException, ServiceException, FormatException, IOException {
+        synchronized LocalReaderWrapper getPrimaryReaderWrapper(final OmeroRawServerOptions options, final Long pixelsID, Map<String, String> readerOptions) throws DependencyException, ServiceException, FormatException, IOException, ServerError, DSOutOfServiceException {
             for (LocalReaderWrapper wrapper : primaryReaders) {
-                if (path.equals(wrapper.getReader().getCurrentFile()) && wrapper.argsMatch(readerOptions))
+                if (pixelsID.equals(wrapper.getReader().getPixelsId()) && wrapper.argsMatch(readerOptions))
                     return wrapper;
             }
-            LocalReaderWrapper wrapper = wrapReader(createPrimaryReader(options, path, null, readerOptions), readerOptions);
+            LocalReaderWrapper wrapper = wrapReader(createPrimaryReader(options, pixelsID, null, readerOptions), readerOptions);
             primaryReaders.add(wrapper);
             return wrapper;
         }
 
 
-        /**
-         * Create a new IFormatReader, with memoization if necessary.
-         *
-         * @param options
-         * @param id File path for the image
-         * @param store optional MetadataStore; this will be set in the reader if needed
-         * @return the IFormatReader
-         * @throws FormatException
-         * @throws IOException
-         */
-        static IFormatReader createReader(final OmeroRawServerOptions options, final String id, final MetadataStore store, Map<String, String> readerOptions) throws FormatException, IOException {
-            return createReader(options, null, id, store, readerOptions);
-        }
 
         /**
          * Request the file size of any known memoization file for a specific ID.
@@ -1219,111 +1146,22 @@ public class OmeroRawServer extends AbstractTileableImageServer {
          * Create a new {@code IFormatReader}, with memoization if necessary.
          *
          * @param options 	options used to control the reader generation
-         * @param cls 		optionally specify a IFormatReader class if it is already known, to avoid a search.
-         * @param id 		file path for the image.
+         * @param pixelsId 		file path for the image.
          * @param store 	optional MetadataStore; this will be set in the reader if needed.
          * @return the {@code IFormatReader}
          * @throws FormatException
          * @throws IOException
          */
-        private static synchronized IFormatReader createReader(final OmeroRawServerOptions options, final Class<? extends IFormatReader> cls,
-                                                               final String id, final MetadataStore store, Map<String, String> readerOptions) throws FormatException, IOException {
-            IFormatReader imageReader;
-            if (cls != null) {
-                ClassList<IFormatReader> list = new ClassList<>(IFormatReader.class);
-                list.addClass(cls);
-                imageReader = new ImageReader(list);
-            } else
-                imageReader = new ImageReader();
+        private static synchronized RawPixelsStorePrx createReader(final OmeroRawServerOptions options,
+                                                               final Long pixelsId, final MetadataStore store, Map<String, String> readerOptions) throws FormatException, IOException, ServerError, DSOutOfServiceException {
 
-            imageReader.setFlattenedResolutions(false);
+            RawPixelsStorePrx rawPixStore = OmeroRawServer.gateway.getPixelsStore(context);
+            rawPixStore.setPixelsId(pixelsId, false);
 
-            // Try to set any reader options that we have
-            MetadataOptions metadataOptions = imageReader.getMetadataOptions();
-            if (!readerOptions.isEmpty() && metadataOptions instanceof DynamicMetadataOptions) {
-                for (var option : readerOptions.entrySet()) {
-                    ((DynamicMetadataOptions)metadataOptions).set(option.getKey(), option.getValue());
-                }
-            }
+            //TODO how to populate metadata
+            IMetadataPrx themeta = gateway.getMetadataService(context);
 
-            Memoizer memoizer = null;
-            int memoizationTimeMillis = options.getMemoizationTimeMillis();
-            File dir = null;
-            if (memoizationTimeMillis >= 0) {
-                // Try to use a specified directory
-                String pathMemoization = options.getPathMemoization();
-                if (pathMemoization != null && !pathMemoization.trim().isEmpty()) {
-                    dir = new File(pathMemoization);
-                    if (!dir.isDirectory()) {
-                        logger.warn("Memoization path does not refer to a valid directory, will be ignored: {}", dir.getAbsolutePath());
-                        dir = null;
-                    }
-                }
-                if (dir == null) {
-                    if (dirMemoTemp == null) {
-                        Path path = Files.createTempDirectory("qupath-memo-");
-                        dirMemoTemp = path.toFile();
-                        Runtime.getRuntime().addShutdownHook(new Thread() {
-                            @Override
-                            public void run() {
-                                deleteTempMemoFiles();
-                            }
-                        });
-//						path.toFile().deleteOnExit(); // Won't work recursively!
-                        logger.warn("Temp memoization directory created at {}", dirMemoTemp);
-                        logger.warn("If you want to avoid this warning, either disable Bio-Formats memoization in the preferences or specify a directory to use");
-                    }
-                    dir = dirMemoTemp;
-                }
-                if (dir != null) {
-                    memoizer = new Memoizer(imageReader, memoizationTimeMillis, dir);
-                    imageReader = memoizer;
-                }
-            }
-
-            if (store != null) {
-                imageReader.setMetadataStore(store);
-            }
-            else
-                imageReader.setMetadataStore(new DummyMetadata());
-
-            if (id != null) {
-                if (memoizer != null) {
-                    File fileMemo = ((Memoizer)imageReader).getMemoFile(id);
-                    // If we're using a temporary directory, delete the memo file
-                    if (dir == dirMemoTemp)
-                        tempMemoFiles.add(fileMemo);
-
-                    long memoizationFileSize = fileMemo == null ? 0L : fileMemo.length();
-                    boolean memoFileExists = fileMemo != null && fileMemo.exists();
-                    try {
-                        imageReader.setId(id);
-                    } catch (Exception e) {
-                        if (memoFileExists) {
-                            logger.warn("Problem with memoization file {} ({}), will try to delete it", fileMemo.getName(), e.getLocalizedMessage());
-                            fileMemo.delete();
-                        }
-                        imageReader.close();
-                        imageReader.setId(id);
-                    }
-                    memoizationFileSize = fileMemo == null ? 0L : fileMemo.length();
-                    if (memoizationFileSize > 0L) {
-                        if (memoizationFileSize > MAX_PARALLELIZATION_MEMO_SIZE) {
-                            logger.warn(String.format("The memoization file is very large (%.1f MB) - parallelization may be turned off to save memory",
-                                    memoizationFileSize/(1024.0*1024.0)));
-                        }
-                        memoizationSizeMap.put(id, memoizationFileSize);
-                    } if (memoizationFileSize == 0L)
-                        logger.debug("No memoization file generated for {}", id);
-                    else if (!memoFileExists)
-                        logger.debug(String.format("Generating memoization file %s (%.2f MB)", fileMemo.getAbsolutePath(), memoizationFileSize/1024.0/1024.0));
-                    else
-                        logger.debug("Memoization file exists at {}", fileMemo.getAbsolutePath());
-                } else {
-                    imageReader.setId(id);
-                }
-            }
-            return imageReader;
+            return rawPixStore;
         }
 
         /**
@@ -1388,16 +1226,16 @@ public class OmeroRawServer extends AbstractTileableImageServer {
          */
         static class LocalReaderWrapper {
 
-            private IFormatReader reader;
+            private RawPixelsStorePrx reader;
             private Map<String, String> readerOptions;
 
-            LocalReaderWrapper(IFormatReader reader, Map<String, String> readerOptions) {
+            LocalReaderWrapper(RawPixelsStorePrx reader, Map<String, String> readerOptions) {
                 this.reader = reader;
                 this.readerOptions = readerOptions == null || readerOptions.isEmpty() ? Collections.emptyMap() :
                         new LinkedHashMap<>(readerOptions);
             }
 
-            public IFormatReader getReader() {
+            public RawPixelsStorePrx getReader() {
                 return reader;
             }
 
@@ -1413,19 +1251,19 @@ public class OmeroRawServer extends AbstractTileableImageServer {
         static class ReaderCleaner implements Runnable {
 
             private String name;
-            private IFormatReader reader;
+            private RawPixelsStorePrx reader;
 
-            ReaderCleaner(String name, IFormatReader reader) {
+            ReaderCleaner(String name, RawPixelsStorePrx reader) {
                 this.name = name;
                 this.reader = reader;
             }
 
             @Override
             public void run() {
-                logger.debug("Cleaner " + name + " called for " + reader + " (" + reader.getCurrentFile() + ")");
+                logger.debug("Cleaner " + name + " called for " + reader + " (" + reader.toString() + ")");
                 try {
-                    this.reader.close(false);
-                } catch (IOException e) {
+                    this.reader.close();
+                } catch (ServerError e) {
                     logger.warn("Error when calling cleaner for " + name, e);
                 }
             }
@@ -1481,6 +1319,8 @@ public class OmeroRawServer extends AbstractTileableImageServer {
         }
 
     }
+    public static Gateway gateway;
+    public static SecurityContext context;
 
     public static void main(String[] args) {
         String host = "omero-poc.epfl.ch";
@@ -1490,9 +1330,9 @@ public class OmeroRawServer extends AbstractTileableImageServer {
 
         try {
 
-            Gateway gateway =  OmeroTools.omeroConnect(host, port, username, password);
+            gateway =  OmeroTools.omeroConnect(host, port, username, password);
             System.out.println( "Session active : "+gateway.isConnected() );
-            SecurityContext ctx = OmeroTools.getSecurityContext(gateway);
+            context = OmeroTools.getSecurityContext(gateway);
         } catch (Exception e) {
             e.printStackTrace();
         }
