@@ -2,8 +2,6 @@ package ch.epfl.biop.qupath.atlas.allen.api;
 
 import ch.epfl.biop.atlas.allen.AllenOntologyJson;
 import ch.epfl.biop.qupath.atlas.allen.utils.RoiSetLoader;
-import ij.IJ;
-import ij.ImagePlus;
 import ij.gui.Roi;
 import javafx.scene.paint.Color;
 import org.slf4j.Logger;
@@ -14,6 +12,8 @@ import qupath.lib.gui.QuPathGUI;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.RotatedImageServer;
+import qupath.lib.measurements.MeasurementList;
+import qupath.lib.measurements.MeasurementListFactory;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.PathObjects;
@@ -183,7 +183,7 @@ public class AtlasTools {
             for (PathObject annotation : annotations) {
                 ROI shapeLeft = RoiTools.combineROIs(leftROI, annotation.getROI(), RoiTools.CombineOp.INTERSECT);
                 if (!shapeLeft.isEmpty()) {
-                    PathObject objectLeft = PathObjects.createAnnotationObject(shapeLeft, annotation.getPathClass(), annotation.getMeasurementList());
+                    PathObject objectLeft = PathObjects.createAnnotationObject(shapeLeft, annotation.getPathClass(), duplicateMeasurements(annotation.getMeasurementList()));
                     objectLeft.setName(annotation.getName());
                     objectLeft.setPathClass(QP.getDerivedPathClass(QP.getPathClass("Left"), annotation.getPathClass().getName()));
                     objectLeft.setColorRGB(annotation.getColorRGB());
@@ -193,7 +193,7 @@ public class AtlasTools {
 
                 ROI shapeRight = RoiTools.combineROIs(rightROI, annotation.getROI(), RoiTools.CombineOp.INTERSECT);
                 if (!shapeRight.isEmpty()) {
-                    PathObject objectRight = PathObjects.createAnnotationObject(shapeRight, annotation.getPathClass(), annotation.getMeasurementList());
+                    PathObject objectRight = PathObjects.createAnnotationObject(shapeRight, annotation.getPathClass(), duplicateMeasurements(annotation.getMeasurementList()));
                     objectRight.setName(annotation.getName());
                     objectRight.setPathClass(QP.getDerivedPathClass(QP.getPathClass("Right"), annotation.getPathClass().getName()));
                     objectRight.setColorRGB(annotation.getColorRGB());
@@ -213,4 +213,16 @@ public class AtlasTools {
         imageData.getHierarchy().fireHierarchyChangedEvent(AtlasTools.class);
     }
 
+    private static MeasurementList duplicateMeasurements( MeasurementList measurements) {
+        MeasurementList list = MeasurementListFactory.createMeasurementList(measurements.size(), MeasurementList.MeasurementListType.GENERAL);
+
+        for (int i = 0; i < measurements.size(); i++) {
+            String name = measurements.getMeasurementName(i);
+            double value = measurements.getMeasurementValue(i);
+            list.addMeasurement(name, value);
+        }
+        return list;
+    }
+
 }
+
