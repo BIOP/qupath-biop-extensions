@@ -1,6 +1,6 @@
-# BIOP Tools Extension
+# BIOP Tools Extension for QuPath v0.2.3
 
-This extension addresses a few needs from our platform and from our users
+This extension addresses a few needs from our platform and from our users. For extensions usable with QuPath 0.3.0, please check the other repositories of the BIOP.
 
 ## Commands
 
