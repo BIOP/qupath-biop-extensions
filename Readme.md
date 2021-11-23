@@ -1,3 +1,13 @@
+# EDIT:  2021-Nov-23rd: ARCHIVED REPOSITORY
+
+This repository is now archived, it is read-only. For extensions in QuPath v0.3 check the other repositories:
+
+* https://github.com/BIOP/qupath-extension-biop
+* https://github.com/BIOP/qupath-extension-cellpose
+* https://github.com/BIOP/qupath-extension-warpy
+* https://github.com/BIOP/qupath-extension-abba
+* and probably others to come...
+
 # BIOP Tools Extension for QuPath v0.2.3
 
 This extension addresses a few needs from our platform and from our users. For extensions usable with QuPath 0.3.0, please check the other repositories of the BIOP.
